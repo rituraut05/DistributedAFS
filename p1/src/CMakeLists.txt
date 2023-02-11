@@ -39,36 +39,35 @@ target_link_libraries(hw_grpc_proto
   ${_REFLECTION}
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
-set(UNRELIABLEFS_SRC afs_client.cc wrapper.cc  conf.c unreliablefs.c unreliablefs_errinj.c unreliablefs_ops.c )
+# set(UNRELIABLEFS_SRC afs_client.cc wrapper.cc  conf.c unreliablefs.c unreliablefs_errinj.c unreliablefs_ops.c )
 
-# set(UNRELIABLEFS_SRC afs_async_client.cc afs_client.cc)
-
-find_package(FUSE 2.9 REQUIRED)
+# find_package(FUSE 2.9 REQUIRED)
 
 
 
-add_executable(client ${UNRELIABLEFS_SRC})
-target_link_libraries(client 
-hw_grpc_proto
-    ${_REFLECTION}
-    ${_GRPC_GRPCPP}
-    ${_PROTOBUF_LIBPROTOBUF}
-${FUSE_LIBRARIES})
-
-target_compile_options(client PUBLIC -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter)
-
-check_function_exists(utimensat HAVE_UTIMENSAT)
-if (${HAVE_UTIMENSAT})
-  target_compile_definitions(client PUBLIC HAVE_UTIMENSAT)
-endif ()
-
-# # Targets greeter_[async_](client|server)
-# foreach(_target
-#   afs_client afs_server)
-#   add_executable(${_target} "${_target}.cc")
-#   target_link_libraries(${_target}
-#     hw_grpc_proto
+# add_executable(client ${UNRELIABLEFS_SRC})
+# target_link_libraries(client 
+# hw_grpc_proto
 #     ${_REFLECTION}
 #     ${_GRPC_GRPCPP}
-#     ${_PROTOBUF_LIBPROTOBUF})
-# endforeach()
+#     ${_PROTOBUF_LIBPROTOBUF}
+# ${FUSE_LIBRARIES})
+
+# target_compile_options(client PUBLIC -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter)
+# target_compile_options(client PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++11 -D_FILE_OFFSET_BITS=64>)
+
+# check_function_exists(utimensat HAVE_UTIMENSAT)
+# if (${HAVE_UTIMENSAT})
+#   target_compile_definitions(client PUBLIC HAVE_UTIMENSAT)
+# endif ()
+
+# Targets greeter_[async_](client|server)
+foreach(_target
+  afs_client afs_server)
+  add_executable(${_target} "${_target}.cc")
+  target_link_libraries(${_target}
+    hw_grpc_proto
+    ${_REFLECTION}
+    ${_GRPC_GRPCPP}
+    ${_PROTOBUF_LIBPROTOBUF})
+endforeach()

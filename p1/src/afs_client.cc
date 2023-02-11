@@ -88,18 +88,6 @@ class FileSystemClient {
         std::cout << "-------------- Helloo --------------" << std::endl;
       }
 
-    FileSystemClient* initGRPC() {
-        FileSystemClient* client = new FileSystemClient(
-            grpc::CreateChannel("localhost:50051",
-                                grpc::InsecureChannelCredentials()));
-
-        std::cout << "-------------- Ping --------------" << std::endl;
-        std::chrono::nanoseconds ping_time;
-        client->Ping(&ping_time);
-        
-
-        return client;
-    }
 
 
     int Ping(std::chrono::nanoseconds * round_trip_time) {
@@ -147,31 +135,31 @@ class FileSystemClient {
       std::unique_ptr<FileSystemService::Stub> stub_;
 };
 
-// FileSystemClient* initGRPC() {
-// FileSystemClient* client = new FileSystemClient(
-//       grpc::CreateChannel("localhost:50051",
-//                           grpc::InsecureChannelCredentials()));
+FileSystemClient* initGRPC() {
+FileSystemClient* client = new FileSystemClient(
+      grpc::CreateChannel("localhost:50051",
+                          grpc::InsecureChannelCredentials()));
 
-//   std::cout << "-------------- Ping --------------" << std::endl;
-//   std::chrono::nanoseconds ping_time;
-//   client->Ping(&ping_time);
+  std::cout << "-------------- Ping --------------" << std::endl;
+  std::chrono::nanoseconds ping_time;
+  client->Ping(&ping_time);
   
 
-//   return client;
-// }
+  return client;
+}
 
-// int main(int argc, char** argv) {
-//   FileSystemClient client(
-//       grpc::CreateChannel("localhost:50051",
-//                           grpc::InsecureChannelCredentials()));
+int main(int argc, char** argv) {
+  FileSystemClient client(
+      grpc::CreateChannel("localhost:50051",
+                          grpc::InsecureChannelCredentials()));
 
-//   std::cout << "-------------- Ping --------------" << std::endl;
-//   std::chrono::nanoseconds ping_time;
-//   client.Ping(&ping_time);
+  std::cout << "-------------- Ping --------------" << std::endl;
+  std::chrono::nanoseconds ping_time;
+  client.Ping(&ping_time);
   
 
-//   return 0;
-// }
+  return 0;
+}
 
 
 // g++ -std=c++17 afs_client.cc afs.pb.cc afs.grpc.pb.cc -o client `pkg-config --libs --cflags protobuf grpc_cpp_plugin`
