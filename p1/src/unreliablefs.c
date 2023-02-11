@@ -12,6 +12,7 @@
 
 #include "unreliablefs_ops.h"
 #include "unreliablefs.h"
+#include "wrapper.h"
 
 extern struct err_inj_q *config_init(const char* conf_path);
 extern void config_delete(struct err_inj_q *config);
@@ -129,9 +130,22 @@ int is_dir(const char *path) {
     return S_ISDIR(statbuf.st_mode);
 }
 
+WFileSystemClient initgRPC() {
+    WFileSystemClient c = create_FileSystemClient("localhost:50051");
+
+    printf("--------------- Ping ---------------\n");
+    int ping_time;
+    int p_rc = ping_FileSystemClient(c, &ping_time);
+    printf("Ping return code: %d; Ping time: %d\n", p_rc, ping_time);
+
+    return c;
+}
+
+
 int main(int argc, char *argv[])
 {
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+
     memset(&conf, 0, sizeof(conf));
     conf.seed = time(0);
     conf.basedir = "/";
@@ -173,6 +187,8 @@ int main(int argc, char *argv[])
         perror("pthread_mutex_init");
         return EXIT_FAILURE;
     }
+
+    WFileSystemClient c = initgRPC();
 
     fprintf(stdout, "starting FUSE filesystem unreliablefs\n");
     int ret = fuse_main(args.argc, args.argv, &unreliable_ops, NULL);

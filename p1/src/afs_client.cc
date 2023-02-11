@@ -4,13 +4,11 @@
 #include <random>
 #include <string>
 #include <thread>
-// grpc code here
 
 #include <grpcpp/grpcpp.h>
 #include <string>
 #include <chrono>
 #include <ctime>
-#include "afs.grpc.pb.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -18,16 +16,8 @@
 #include <fstream>
 #include <sstream>
 
-// #include <grpc/grpc.h>
-// #include <grpcpp/channel.h>
-// #include <grpcpp/client_context.h>
-// #include <grpcpp/create_channel.h>
-// #include <grpcpp/security/credentials.h>
-// #ifdef BAZEL_BUILD
-// #include "examples/protos/route_guide.grpc.pb.h"
-// #else
-// #include "route_guide.grpc.pb.h"
-// #endif
+#include "afs.grpc.pb.h"
+#include "afs_client.hh"
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -76,21 +66,14 @@ using afs::Timestamp;
 #define RETRY_TIME_MULTIPLIER 2                                     // for rpc retry w backoff
 #define MAX_RETRY             5                                     // rpc retry
 
-class FileSystemClient {
- public:
-//  RouteGuideClient(std::shared_ptr<Channel> channel, const std::string& db)
-//       : stub_(RouteGuide::NewStub(channel)) {
-//     routeguide::ParseDb(db, &feature_list_);
-//   }
-  FileSystemClient(std::shared_ptr<Channel> channel)
+extern "C" {
+    FileSystemClient::FileSystemClient(std::shared_ptr<Channel> channel)
       : stub_(FileSystemService::NewStub(channel)) {
 
         std::cout << "-------------- Helloo --------------" << std::endl;
       }
 
-
-
-    int Ping(std::chrono::nanoseconds * round_trip_time) {
+    int FileSystemClient::Ping(int * round_trip_time) {
         auto start = std::chrono::steady_clock::now();
         
         PingMessage request;
@@ -114,7 +97,8 @@ class FileSystemClient {
             
             printf("Ping: RPC Success\n");
             auto end = std::chrono::steady_clock::now();
-            *round_trip_time = end-start;
+            std::chrono::nanoseconds ns = end-start;
+            *round_trip_time = ns.count();
             #if DEBUG
             std::chrono::duration<double,std::ratio<1,1>> seconds = end-start;
             printf("Ping: Exiting function (took %fs)\n",seconds.count());
@@ -130,36 +114,7 @@ class FileSystemClient {
         
         
     }
-
-    private:
-      std::unique_ptr<FileSystemService::Stub> stub_;
 };
-
-FileSystemClient* initGRPC() {
-FileSystemClient* client = new FileSystemClient(
-      grpc::CreateChannel("localhost:50051",
-                          grpc::InsecureChannelCredentials()));
-
-  std::cout << "-------------- Ping --------------" << std::endl;
-  std::chrono::nanoseconds ping_time;
-  client->Ping(&ping_time);
-  
-
-  return client;
-}
-
-int main(int argc, char** argv) {
-  FileSystemClient client(
-      grpc::CreateChannel("localhost:50051",
-                          grpc::InsecureChannelCredentials()));
-
-  std::cout << "-------------- Ping --------------" << std::endl;
-  std::chrono::nanoseconds ping_time;
-  client.Ping(&ping_time);
-  
-
-  return 0;
-}
 
 
 // g++ -std=c++17 afs_client.cc afs.pb.cc afs.grpc.pb.cc -o client `pkg-config --libs --cflags protobuf grpc_cpp_plugin`
