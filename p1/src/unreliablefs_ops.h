@@ -4,7 +4,9 @@
 #define FUSE_USE_VERSION 29
 
 #include <fuse.h>
+#include "wrapper.h"
 
+void initgRPC();
 int unreliable_getattr(const char *, struct stat *);
 int unreliable_readlink(const char *, char *, size_t);
 int unreliable_mknod(const char *, mode_t, dev_t);
@@ -121,5 +123,7 @@ typedef enum {
 } fuse_op;
 
 extern const char *fuse_op_name[];
+
+WFileSystemClient client;
 
 #endif /* UNRELIABLEFS_OPS_HH */

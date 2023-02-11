@@ -45,27 +45,34 @@ set(UNRELIABLEFS_SRC afs_client.cc wrapper.cc  conf.c unreliablefs.c unreliablef
 
 find_package(FUSE 2.9 REQUIRED)
 
-add_executable(client ${UNRELIABLEFS_SRC})
-target_link_libraries(client 
+add_executable(afs_client ${UNRELIABLEFS_SRC})
+target_link_libraries(afs_client 
 hw_grpc_proto
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}
 ${FUSE_LIBRARIES})
 
-target_compile_options(client PUBLIC -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter)
-target_compile_options(client PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++11 -D_FILE_OFFSET_BITS=64>)
+add_executable(afs_server afs_server.cc)
+target_link_libraries(afs_server
+hw_grpc_proto
+${_REFLECTION}
+${_GRPC_GRPCPP}
+${_PROTOBUF_LIBPROTOBUF})
+
+target_compile_options(afs_client PUBLIC -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter)
+target_compile_options(afs_client PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++11 -D_FILE_OFFSET_BITS=64>)
 
 check_function_exists(utimensat HAVE_UTIMENSAT)
 check_function_exists(fallocate HAVE_FALLOCATE)
 check_function_exists(fallocate HAVE_FLOCK)
 if (${HAVE_UTIMENSAT})
-  target_compile_definitions(client PUBLIC HAVE_UTIMENSAT)
+  target_compile_definitions(afs_client PUBLIC HAVE_UTIMENSAT)
 endif ()
 if (${HAVE_FALLOCATE})
-    target_compile_definitions(client PUBLIC HAVE_FALLOCATE)
+    target_compile_definitions(afs_client PUBLIC HAVE_FALLOCATE)
 endif ()
 if (${HAVE_FLOCK})
-    target_compile_definitions(client PUBLIC HAVE_FLOCK)
+    target_compile_definitions(afs_client PUBLIC HAVE_FLOCK)
 endif ()
 

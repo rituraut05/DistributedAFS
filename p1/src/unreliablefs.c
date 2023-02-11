@@ -130,18 +130,6 @@ int is_dir(const char *path) {
     return S_ISDIR(statbuf.st_mode);
 }
 
-WFileSystemClient initgRPC() {
-    WFileSystemClient c = create_FileSystemClient("localhost:50051");
-
-    printf("--------------- Ping ---------------\n");
-    int ping_time;
-    int p_rc = ping_FileSystemClient(c, &ping_time);
-    printf("Ping return code: %d; Ping time: %d\n", p_rc, ping_time);
-
-    return c;
-}
-
-
 int main(int argc, char *argv[])
 {
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
@@ -188,7 +176,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    WFileSystemClient c = initgRPC();
+    initgRPC();
 
     fprintf(stdout, "starting FUSE filesystem unreliablefs\n");
     int ret = fuse_main(args.argc, args.argv, &unreliable_ops, NULL);

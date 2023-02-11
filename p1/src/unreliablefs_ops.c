@@ -18,6 +18,7 @@
 
 #define ERRNO_NOOP -999
 
+#include "wrapper.h"
 #include "unreliablefs_ops.h"
 
 const char *fuse_op_name[] = {
@@ -71,6 +72,17 @@ const char *fuse_op_name[] = {
 };
 
 extern int error_inject(const char* path, fuse_op operation);
+
+void initgRPC() {
+    WFileSystemClient c = create_FileSystemClient("localhost:50051");
+
+    printf("--------------- Ping ---------------\n");
+    int ping_time;
+    int p_rc = ping_FileSystemClient(c, &ping_time);
+    printf("Ping return code: %d; Ping time: %d\n", p_rc, ping_time);
+
+    if(p_rc == 0) client = c;
+}
 
 int unreliable_lstat(const char *path, struct stat *buf)
 {
@@ -676,6 +688,9 @@ int unreliable_create(const char *path, mode_t mode,
                       struct fuse_file_info *fi)
 {
     fprintf(stdout, "Entering create file\n");
+    int ping_time;
+    int p_rc = ping_FileSystemClient(client, &ping_time);
+    printf("Ping (in create) return code: %d; Ping time: %d\n", p_rc, ping_time);
 
     int ret = error_inject(path, OP_CREAT);
     if (ret == -ERRNO_NOOP) {
