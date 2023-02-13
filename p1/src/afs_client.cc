@@ -17,8 +17,10 @@
 #include <fstream>
 #include <sstream>
 
+#include <fuse.h>
 #include "afs.grpc.pb.h"
 #include "afs_client.hh"
+//#include <unreliablefs_ops.h>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -225,7 +227,7 @@ extern "C" {
 
 			std::string path = get_relative_path(abs_path, root);
 
-			dbgprintf("Path is: %s\n", path);
+//			dbgprintf("Path is: %s\n", path);
 
 			request.set_pathname(path);
 			// Make RPC
@@ -453,6 +455,168 @@ extern "C" {
 			dbgprintf("TestAuth: Exiting function\n");
 			return TestAuthReturnType(status, reply);
 		}	
+
+		
+    int FileSystemClient::MakeDir(std::string abs_path, std::string root, mode_t mode) {
+        printf("MakeDir: Entering function\n");
+	MakeDirRequest request;
+	MakeDirResponse reply;
+	Status status;
+	uint32_t retryCount = 0;
+
+	std::string path = get_relative_path(abs_path, root);
+	request.set_pathname(path);
+	request.set_mode(mode);
+
+	// Make RPC
+	// Retry w backoff
+                
+	do         
+	{
+	    ClientContext context;
+    	    reply.Clear();
+	    printf("MakeDir: Invoking RPC\n");
+	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+	    status = stub_->MakeDir(&context, request, &reply);
+	    retryCount++;
+	} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+   	  
+      	// Checking RPC Status	
+	if (status.ok()) {
+            printf("MakeDir: RPC Success\n");
+            printf("MakeDir: Exiting function\n");
+            uint server_errno = reply.fs_errno();
+	    if(server_errno) {
+		printf("...but error %d on server\n", server_errno);
+		printf("MakeDir: Exiting function\n"); 
+		errno = server_errno;
+		return -1;
+	    }
+                    
+            // making the dir in cache directory, hierarchical if necessary
+            create_path(path, false, root);
+	    return 0;
+	}
+	else
+	{
+	    printf("MakeDir: RPC failure\n");
+    	    printf("MakeDir: Exiting function\n");
+//	    errno = transform_rpc_err(status.error_code());
+	    return -1;
+	}
+    }
+
+    int FileSystemClient::RemoveDir(std::string abs_path, std::string root) {
+        printf("RemoveDir: Entering function\n");
+	RemoveDirRequest request;
+	RemoveDirResponse reply;
+	Status status;
+	uint32_t retryCount = 0;
+
+	std::string path = get_relative_path(abs_path, root);
+	request.set_pathname(path);
+
+	// Make RPC
+	// Retry w backoff
+        
+	do
+	{
+	    ClientContext context;
+    	    reply.Clear();
+	    printf("RemoveDir: Invoking RPC\n");
+	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+	    status = stub_->RemoveDir(&context, request, &reply);
+	    retryCount++;
+	} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+
+        // Checking RPC Status
+
+	if (status.ok())
+	{
+	    printf("RemoveDir: RPC Success\n");
+	    printf("RemoveDir: Exiting function\n");
+
+            uint server_errno = reply.fs_errno();
+	    if(server_errno) {
+		printf("...but error %d on server\n", server_errno);
+	    	printf("RemoveDir: Exiting function\n");
+		errno = server_errno;
+		return -1;
+	    }
+
+            // removing directory from cache
+	    // rmdir(get_cache_path(path).c_str());
+	    return 0;
+	}
+	else
+	{
+	    printf("RemoveDir: RPC Failure\n");
+	    printf("RemoveDir: Exiting function\n");
+//	    errno = transform_rpc_err(status.error_code());
+	    return -1;
+	}
+    }
+
+    int FileSystemClient::ReadDir(std::string abs_path, std::string root, void *buf, fuse_fill_dir_t filler) {
+        printf("ListDir: Entering function\n");
+ 	ListDirRequest request;
+ 	ListDirResponse reply;
+ 	Status status;
+ 	uint32_t retryCount = 0;
+
+	std::string path = get_relative_path(abs_path, root);
+ 	request.set_pathname(path);
+
+ 	// Make RPC
+	// Retry w backoff
+ 
+	do
+	{
+	    ClientContext context;
+            reply.Clear();
+    	    printf("ListDir: Invoking RPC\n");
+    	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+    	    status = stub_->ReadDir(&context, request, &reply);
+    	    retryCount++;
+    	} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+
+    
+	// std::cout << "count = " << reply.entries().size() << std::endl;
+
+	// Checking RPC Status
+	if (status.ok()) {
+            printf("ListDir: RPC Success\n");       
+    	    uint server_errno = reply.fs_errno();
+   	    if(server_errno) {
+   	        printf("...but error %d on server\n", server_errno);
+               	printf("ListDir: Exiting function\n");          
+     		errno = server_errno;
+               	return -1;
+	    }
+        
+	}
+       	else
+       	{
+       	    // std::cout << status.error_code() << ": " << status.error_message()
+       	    //           << std::endl;
+	    //PrintErrorMessage(status.error_code(), status.error_message(), "ListDir");
+	    printf("ListDir: RPC Failure\n");
+      //	    errno = transform_rpc_err(status.error_code());
+     	    return -1;
+     	}
+
+     	printf("ListDir: Exiting function\n");
+     	for (auto itr = reply.entries().begin(); itr != reply.entries().end(); itr++) {
+            struct stat st;
+       	    memset(&st, 0, sizeof(st));
+       	    st.st_ino = itr->size();
+       	    st.st_mode = itr->mode();
+//       	    if (filler(buf, itr->file_name().c_str() , &st, 0, static_cast<fuse_fill_dir_flags>(0)))
+//                break;
+   	}
+   	return 0;
+    }
+
 };
 
 

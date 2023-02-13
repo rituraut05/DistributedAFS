@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 include(cmake/common.cmake)
 include(CheckFunctionExists)
 
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
 # Proto file

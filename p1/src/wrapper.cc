@@ -20,4 +20,17 @@ extern "C" {
 	int open_FileSystemClient(WFileSystemClient v, char* path, char* root) {
 		return ((FileSystemClient*)v)->OpenFile(path, root);
 	}
+	
+	int makeDir_FileSystemClient(WFileSystemClient v, char* abs_path, char* root, mode_t mode) {
+		return ((FileSystemClient*)v)->MakeDir(abs_path, root, mode);
+	}
+
+	int removeDir_FileSystemClient(WFileSystemClient v, char* abs_path, char* root) {
+                return ((FileSystemClient*)v)->RemoveDir(abs_path, root);
+        }
+
+	int readDir_FileSystemClient(WFileSystemClient v, char* abs_path, char* root, void *buf, int* filler) {
+                return ((FileSystemClient*)v)->ReadDir(abs_path, root, buf, (fuse_fill_dir_t) filler);
+        }
+	
 }
