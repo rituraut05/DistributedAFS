@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5.1)
 
 project(afs C CXX)
 
+set(CMAKE_CXX_STANDARD 17)
 include(cmake/common.cmake)
 include(CheckFunctionExists)
 
@@ -55,13 +56,15 @@ ${FUSE_LIBRARIES})
 
 add_executable(afs_server afs_server.cc)
 target_link_libraries(afs_server
-hw_grpc_proto
-${_REFLECTION}
-${_GRPC_GRPCPP}
-${_PROTOBUF_LIBPROTOBUF})
+    "stdc++fs"
+    hw_grpc_proto
+    ${_REFLECTION}
+    ${_GRPC_GRPCPP}
+    ${_PROTOBUF_LIBPROTOBUF})
 
 target_compile_options(afs_client PUBLIC -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter)
-target_compile_options(afs_client PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++11 -D_FILE_OFFSET_BITS=64>)
+target_compile_options(afs_client PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++17 -D_FILE_OFFSET_BITS=64>)
+target_compile_options(afs_server PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-std=c++17>)
 
 check_function_exists(utimensat HAVE_UTIMENSAT)
 check_function_exists(fallocate HAVE_FALLOCATE)

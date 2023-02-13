@@ -73,15 +73,18 @@ const char *fuse_op_name[] = {
 
 extern int error_inject(const char* path, fuse_op operation);
 
-void initgRPC() {
-    WFileSystemClient c = create_FileSystemClient("localhost:50051");
+void initgRPC(char* server_addr, char* root) {
+    WFileSystemClient c = create_FileSystemClient(server_addr);
 
     printf("--------------- Ping ---------------\n");
     int ping_time;
     int p_rc = ping_FileSystemClient(c, &ping_time);
     printf("Ping return code: %d; Ping time: %d\n", p_rc, ping_time);
 
-    if(p_rc == 0) client = c;
+    if(p_rc == 0) {
+        client = c;
+        basedir = root;
+    }
 }
 
 int unreliable_lstat(const char *path, struct stat *buf)
@@ -103,6 +106,7 @@ int unreliable_lstat(const char *path, struct stat *buf)
 
 int unreliable_getattr(const char *path, struct stat *buf)
 {
+    fprintf(stdout, "Entering getattr first for %s\n", path);
     int ret = error_inject(path, OP_GETATTR);
     if (ret == -ERRNO_NOOP) {
         return 0;
@@ -111,9 +115,12 @@ int unreliable_getattr(const char *path, struct stat *buf)
     }
 
     memset(buf, 0, sizeof(struct stat));
-    if (lstat(path, buf) == -1) {
+    if (getFileStat_FileSystemClient(client, path, buf, basedir) == -1) {
         return -errno;
     }
+    // if (lstat(path, buf) == -1) {
+    //     return -errno;
+    // }
 
     return 0;
 }
@@ -308,7 +315,7 @@ int unreliable_truncate(const char *path, off_t length)
 
 int unreliable_open(const char *path, struct fuse_file_info *fi)
 {
-    fprintf(stdout, "Entering open command\n");
+    fprintf(stdout, "Entering open command %s\n", path);
 
     int ret = error_inject(path, OP_OPEN);
     if (ret == -ERRNO_NOOP) {
@@ -317,7 +324,8 @@ int unreliable_open(const char *path, struct fuse_file_info *fi)
         return ret;
     }
     
-    ret = open(path, fi->flags);
+    ret = open_FileSystemClient(client, path, basedir);
+    // ret = open(path, fi->flags);
     if (ret == -1) {
         return -errno;
     }
@@ -687,10 +695,10 @@ int unreliable_access(const char *path, int mode)
 int unreliable_create(const char *path, mode_t mode,
                       struct fuse_file_info *fi)
 {
-    fprintf(stdout, "Entering create file\n");
-    int ping_time;
-    int p_rc = ping_FileSystemClient(client, &ping_time);
-    printf("Ping (in create) return code: %d; Ping time: %d\n", p_rc, ping_time);
+    fprintf(stdout, "Entering create file %s\n", path);
+    // int ping_time;
+    // int p_rc = ping_FileSystemClient(client, &ping_time);
+    // printf("Ping (in create) return code: %d; Ping time: %d\n", p_rc, ping_time);
 
     int ret = error_inject(path, OP_CREAT);
     if (ret == -ERRNO_NOOP) {

@@ -125,5 +125,6 @@ typedef enum {
 extern const char *fuse_op_name[];
 
 WFileSystemClient client;
+char* basedir;
 
 #endif /* UNRELIABLEFS_OPS_HH */
