@@ -169,7 +169,8 @@ int unreliable_mkdir(const char *path, mode_t mode)
         return ret;
     }
 
-    ret = mkdir(path, mode);
+    ret = makeDir_FileSystemClient(client, path, basedir, mode);
+    // ret = mkdir(path, mode);
     if (ret == -1) {
         return -errno;
     }
@@ -203,7 +204,8 @@ int unreliable_rmdir(const char *path)
         return ret;
     }
 
-    ret = rmdir(path); 
+    ret = removeDir_FileSystemClient(client, path, basedir);
+    // ret = rmdir(path); 
     if (ret == -1) {
         return -errno;
     }
@@ -594,24 +596,28 @@ int unreliable_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         return ret;
     }
 
-    DIR *dp = opendir(path);
-    if (dp == NULL) {
-	return -errno;
-    }
-    struct dirent *de;
+    // DIR *dp = opendir(path);
+    // if (dp == NULL) {
+	// return -errno;
+    // }
+    // struct dirent *de;
 
-    (void) offset;
-    (void) fi;
+    // (void) offset;
+    // (void) fi;
 
-    while ((de = readdir(dp)) != NULL) {
-        struct stat st;
-        memset(&st, 0, sizeof(st));
-        st.st_ino = de->d_ino;
-        st.st_mode = de->d_type << 12;
-        if (filler(buf, de->d_name, &st, 0))
-            break;
-    }
-    closedir(dp);
+    // while ((de = readdir(dp)) != NULL) {
+        // struct stat st;
+        // memset(&st, 0, sizeof(st));
+        // st.st_ino = de->d_ino;
+        // st.st_mode = de->d_type << 12;
+        // if (filler(buf, de->d_name, &st, 0))
+        //    break;
+    // }
+    // closedir(dp);
+
+    ret = readDir_FileSystemClient(client, path, basedir, buf, filler);
+    if (ret == -1)
+	    return -errno;
 
     return 0;
 }

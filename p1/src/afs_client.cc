@@ -17,7 +17,7 @@
 #include <fstream>
 #include <sstream>
 
-#include <fuse.h>
+//#include <fuse.h>
 #include "afs.grpc.pb.h"
 #include "afs_client.hh"
 //#include <unreliablefs_ops.h>
@@ -68,6 +68,14 @@ using std::vector;
 #define RETRY_TIME_START      1                                     // in seconds
 #define RETRY_TIME_MULTIPLIER 2                                     // for rpc retry w backoff
 #define MAX_RETRY             5                                     // rpc retry
+
+enum fuse_readdir_flags {
+         FUSE_READDIR_PLUS = (1 << 0),
+};
+
+enum fuse_fill_dir_flags {
+         FUSE_FILL_DIR_PLUS = (1 << 1),
+};
 
 string get_relative_path(string path, string root) {
 	string path_copy = path;
@@ -501,7 +509,7 @@ extern "C" {
 	{
 	    printf("MakeDir: RPC failure\n");
     	    printf("MakeDir: Exiting function\n");
-//	    errno = transform_rpc_err(status.error_code());
+	    errno = transform_rpc_err(status.error_code());
 	    return -1;
 	}
     }
@@ -546,13 +554,14 @@ extern "C" {
 
             // removing directory from cache
 	    // rmdir(get_cache_path(path).c_str());
+	    rmdir(path.c_str());
 	    return 0;
 	}
 	else
 	{
 	    printf("RemoveDir: RPC Failure\n");
 	    printf("RemoveDir: Exiting function\n");
-//	    errno = transform_rpc_err(status.error_code());
+	    errno = transform_rpc_err(status.error_code());
 	    return -1;
 	}
     }
@@ -601,7 +610,7 @@ extern "C" {
        	    //           << std::endl;
 	    //PrintErrorMessage(status.error_code(), status.error_message(), "ListDir");
 	    printf("ListDir: RPC Failure\n");
-      //	    errno = transform_rpc_err(status.error_code());
+      	    errno = transform_rpc_err(status.error_code());
      	    return -1;
      	}
 
@@ -611,8 +620,9 @@ extern "C" {
        	    memset(&st, 0, sizeof(st));
        	    st.st_ino = itr->size();
        	    st.st_mode = itr->mode();
-//       	    if (filler(buf, itr->file_name().c_str() , &st, 0, static_cast<fuse_fill_dir_flags>(0)))
-//                break;
+       	    // if (filler(buf, itr->file_name().c_str() , &st, 0, static_cast<fuse_fill_dir_flags>(0)))
+       	    if (filler(buf, itr->file_name().c_str() , &st, 0))
+                break;
    	}
    	return 0;
     }
