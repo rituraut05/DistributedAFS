@@ -13,6 +13,8 @@ service FileSystemService
     rpc Remove (RemoveRequest) returns (RemoveResponse) {}
     // rpc Rename (RenameRequest) returns (RenameResponse) {}
     rpc Create (CreateRequest) returns (CreateResponse) {}
+
+    rpc Mknod (MknodRequest) returns (MknodResponse) {}
     
     // Metadata operations
     rpc GetFileStat (GetFileStatRequest) returns (GetFileStatResponse) {}
@@ -110,6 +112,17 @@ message RemoveResponse
     uint32 fs_errno = 1;
 }
 
+message MknodRequest
+{
+    string pathname = 1;
+    uint32 mode = 2;
+    uint32 dev = 3;
+}
+
+message MknodResponse
+{
+    uint32 fs_errno = 1;
+}
 
 
 message GetFileStatRequest
@@ -166,4 +179,3 @@ message ListDirResponse
     uint32 fs_errno = 1;
     repeated DirectoryEntry entries = 2;
 }
-

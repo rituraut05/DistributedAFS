@@ -20,6 +20,10 @@ extern "C" {
 	int open_FileSystemClient(WFileSystemClient v, char* path, char* root) {
 		return ((FileSystemClient*)v)->OpenFile(path, root);
 	}
+
+	int close_FileSystemClient(WFileSystemClient v, int fd, char* path, char* root) {
+		return ((FileSystemClient*)v)->CloseFile(fd, path, root);
+	}
 	
 	int makeDir_FileSystemClient(WFileSystemClient v, char* abs_path, char* root, mode_t mode) {
 		return ((FileSystemClient*)v)->MakeDir(abs_path, root, mode);
@@ -32,5 +36,13 @@ extern "C" {
 	int readDir_FileSystemClient(WFileSystemClient v, char* abs_path, char* root, void *buf, int* filler) {
                 return ((FileSystemClient*)v)->ReadDir(abs_path, root, buf, (fuse_fill_dir_t) filler);
         }
+	
+	int createFile_FileSystemClient(WFileSystemClient v, char* abs_path, char* root, mode_t mode, dev_t dev) {
+			return ((FileSystemClient*)v)->CreateFile(abs_path, root, mode, dev);
+	}
+
+	int deleteFile_FileSystemClient(WFileSystemClient v, char* abs_path, char* root) {
+		return ((FileSystemClient*)v)->DeleteFile(abs_path, root);
+	}
 	
 }

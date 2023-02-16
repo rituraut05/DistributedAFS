@@ -152,7 +152,7 @@ int unreliable_mknod(const char *path, mode_t mode, dev_t dev)
         return ret;
     }
 
-    ret = mknod(path, mode, dev);    
+    ret = createFile_FileSystemClient(client, path, basedir, mode, dev);    
     if (ret == -1) {
         return -errno;
     }
@@ -187,7 +187,8 @@ int unreliable_unlink(const char *path)
         return ret;
     }
 
-    ret = unlink(path); 
+    ret = deleteFile_FileSystemClient(client, path, basedir);
+    // ret = unlink(path); 
     if (ret == -1) {
         return -errno;
     }
@@ -430,6 +431,7 @@ int unreliable_flush(const char *path, struct fuse_file_info *fi)
         return ret;
     }
 
+    printf("flushing!");
     ret = close(dup(fi->fh));
     if (ret == -1) {
         return -errno;
@@ -447,6 +449,7 @@ int unreliable_release(const char *path, struct fuse_file_info *fi)
         return ret;
     }
 
+    printf("releasing!");
     ret = close(fi->fh);
     if (ret == -1) {
         return -errno;
@@ -463,6 +466,7 @@ int unreliable_fsync(const char *path, int datasync, struct fuse_file_info *fi)
     } else if (ret) {
         return ret;
     }
+    printf("fsyncing!");
 
     if (datasync) {
         ret = fdatasync(fi->fh);
@@ -713,7 +717,7 @@ int unreliable_create(const char *path, mode_t mode,
         return ret;
     }
     
-    ret = open(path, fi->flags, mode);
+    ret = createFile_FileSystemClient(client, path, basedir,  mode, NULL);
     if (ret == -1) {
         return -errno;
     }
