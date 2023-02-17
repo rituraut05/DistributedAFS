@@ -118,9 +118,6 @@ int unreliable_getattr(const char *path, struct stat *buf)
     if (getFileStat_FileSystemClient(client, path, buf, basedir) == -1) {
         return -errno;
     }
-    // if (lstat(path, buf) == -1) {
-    //     return -errno;
-    // }
 
     return 0;
 }
@@ -328,7 +325,6 @@ int unreliable_open(const char *path, struct fuse_file_info *fi)
     }
     
     ret = open_FileSystemClient(client, path, basedir);
-    // ret = open(path, fi->flags);
     if (ret == -1) {
         return -errno;
     }
@@ -706,9 +702,6 @@ int unreliable_create(const char *path, mode_t mode,
                       struct fuse_file_info *fi)
 {
     fprintf(stdout, "Entering create file %s\n", path);
-    // int ping_time;
-    // int p_rc = ping_FileSystemClient(client, &ping_time);
-    // printf("Ping (in create) return code: %d; Ping time: %d\n", p_rc, ping_time);
 
     int ret = error_inject(path, OP_CREAT);
     if (ret == -ERRNO_NOOP) {

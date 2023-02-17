@@ -5,15 +5,12 @@ package afs;
 service FileSystemService 
 {
     rpc Ping (PingMessage) returns (PingMessage) {}
-        
-    // BASIC
+
     // File operations
     rpc Fetch (FetchRequest) returns (FetchResponse) {}
     rpc Store (StoreRequest) returns (StoreResponse) {}
     rpc Remove (RemoveRequest) returns (RemoveResponse) {}
-    // rpc Rename (RenameRequest) returns (RenameResponse) {}
     rpc Create (CreateRequest) returns (CreateResponse) {}
-
     rpc Mknod (MknodRequest) returns (MknodResponse) {}
     
     // Metadata operations
@@ -24,6 +21,39 @@ service FileSystemService
     rpc MakeDir (MakeDirRequest) returns (MakeDirResponse) {}
     rpc RemoveDir (RemoveDirRequest) returns (RemoveDirResponse) {}
     rpc ReadDir (ListDirRequest) returns (ListDirResponse) {}
+}
+
+message PingMessage { }
+
+message FetchRequest
+{
+    string pathname = 1;
+}
+message FetchResponse
+{
+    bytes file_contents = 1;
+    Timestamp time_modified = 2;
+    int32 fs_errno = 3;
+}
+
+message TestAuthRequest
+{
+    string pathname = 1;
+    Timestamp time_modified = 2;
+}
+message TestAuthResponse
+{
+    bool file_changed = 1;
+}
+
+message GetFileStatRequest
+{
+    string pathname = 1;
+}
+message GetFileStatResponse
+{
+    FileStat stat = 1;
+    int32 fs_errno = 2;
 }
 
 // Based on chrono::timespec
@@ -60,19 +90,6 @@ message DirectoryEntry {
     string file_name = 1;
     FileMode mode = 2;
     uint64 size = 3; // in bytes
-}
-
-message PingMessage { }
-
-message FetchRequest
-{
-    string pathname = 1;
-}
-message FetchResponse
-{
-    uint32 fs_errno = 1;
-    bytes file_contents = 2;
-    Timestamp time_modify = 3;
 }
 
 message CreateRequest
@@ -117,30 +134,6 @@ message MknodRequest
 message MknodResponse
 {
     uint32 fs_errno = 1;
-}
-
-
-
-message TestAuthRequest
-{
-    string pathname = 1;
-    Timestamp time_modify = 2;
-}
-message TestAuthResponse
-{
-    // note: TestAuth never returns a filesystem error
-    // any such error is transformed to has_changed=true.
-    bool has_changed = 1;
-}
-
-message GetFileStatRequest
-{
-    string pathname = 1;
-}
-message GetFileStatResponse
-{
-    uint32 fs_errno = 1;
-    FileStat status = 2;
 }
 
 message MakeDirRequest

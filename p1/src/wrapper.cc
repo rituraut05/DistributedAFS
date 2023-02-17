@@ -13,8 +13,8 @@ extern "C" {
 		return ((FileSystemClient*)v)->Ping(i);
 	}
 
-	int getFileStat_FileSystemClient(WFileSystemClient v, char* path, struct stat *stbuf, char* root) {
-		return ((FileSystemClient*)v)->GetFileStat(path, stbuf, root);
+	int getFileStat_FileSystemClient(WFileSystemClient v, char* path, struct stat *buf, char* root) {
+		return ((FileSystemClient*)v)->GetFileStat(path, buf, root);
 	}
 
 	int open_FileSystemClient(WFileSystemClient v, char* path, char* root) {

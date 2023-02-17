@@ -19,7 +19,7 @@ int removeDir_FileSystemClient(WFileSystemClient, char*, char*);
 // int readDir_FileSystemClient(WFileSystemClient, char*, char*, void *, fuse_fill_dir_t);
 int readDir_FileSystemClient(WFileSystemClient, char*, char*, void *, int*);
 int createFile_FileSystemClient(WFileSystemClient v, char* , char* , mode_t, dev_t);
-int deeleteFile_FileSystemClient(WFileSystemClient v, char* abs_path, char* root);
+int deleteFile_FileSystemClient(WFileSystemClient v, char* abs_path, char* root);
 
 #ifdef __cplusplus
 }

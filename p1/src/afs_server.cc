@@ -24,10 +24,6 @@
     if (DEBUG) {             \
         printf(__VA_ARGS__); \
     }
-#define dbgprintf(...)       \
-    if (DEBUG) {             \
-        printf(__VA_ARGS__); \
-    }
 #define errprintf(...) \
     { printf(__VA_ARGS__); }
 
@@ -100,41 +96,23 @@ class AFSImpl final : public FileSystemService::Service {
 
   path getPath(string relativePath) {
     path normalPath = (root / relativePath).lexically_normal();
-    debugprintf("getPath: root = %s\n", root.c_str());
-    debugprintf("getPath: relative path = %s\n", relativePath.c_str());
-    debugprintf("getPath: Normalised path = %s\n", normalPath.c_str());
+    debugprintf("[getPath]: root = %s\n", root.c_str());
+    debugprintf("[getPath]: relative path = %s\n", relativePath.c_str());
+    debugprintf("[getPath]: Normalised path = %s\n", normalPath.c_str());
     
     // error checking 
     auto [a, b] = std::mismatch(root.begin(), root.end(), normalPath.begin());
     if (a != root.end()) {
-      throw ProtocolException("Normalized path is outside storage root", StatusCode::INVALID_ARGUMENT);
+      throw ProtocolException("Normalized path is outside server root.", StatusCode::INVALID_ARGUMENT);
     }
 
     return normalPath;
   }
 
- path to_storage_path(string relative) {
-        dbgprintf("to_storage_path: root = %s\n", root.c_str());
-        dbgprintf("to_storage_path: relative = %s\n", relative.c_str());
-        path normalized = (root / relative).lexically_normal();
-        dbgprintf("to_storage_path: normalized = %s\n", normalized.c_str());
-        // Check that this path is under our storage root
-        auto [a, b] = std::mismatch(root.begin(), root.end(), normalized.begin());
-        if (a != root.end()) {
-            throw ProtocolException("Normalized path is outside storage root", StatusCode::INVALID_ARGUMENT);
-        }
-
-        if (normalized.extension() == TEMP_FILE_EXT) {
-            throw ProtocolException("Attempting to access file with a reserved extension", StatusCode::INVALID_ARGUMENT);
-        }
-
-        return normalized;  
-  }
-
   Timestamp readModifyTime(path filepath) {
     struct stat sb;
     if (stat(filepath.c_str(), &sb) == -1) {
-        throw FileSystemException(errno);
+      throw FileSystemException(errno);
     }
     Timestamp t;
     t.set_sec(sb.st_mtim.tv_sec);
@@ -149,12 +127,11 @@ class AFSImpl final : public FileSystemService::Service {
     // Error locating file in filepath
     if(ec) {
       return ec.value();
-    }
-    
+    } 
     switch (status.type()) {
       case fs::file_type::regular: 
         return 0;
-      case fs::file_type::directory: // filepath has directory
+      case fs::file_type::directory: // filepath is a directory
         return EISDIR;
       default:
         return EPERM; // Other types of file, we throw a permission error
@@ -162,8 +139,6 @@ class AFSImpl final : public FileSystemService::Service {
   }
 
   string readFile(path filepath) {
-    debugprintf("readFile: Entering function\n");
-
     // Check that path exists and is a file before proceeding
     uint chkFileErr = checkReadLocation(filepath);
     if(chkFileErr != 0) {
@@ -175,11 +150,10 @@ class AFSImpl final : public FileSystemService::Service {
     buffer << file.rdbuf();
 
     if (file.fail()) {
-      debugprintf("readFile: Exiting function with failure\n");
+      debugprintf("[readFile]: Function ended on file read failure.\n");
       throw ProtocolException("Error reading file", StatusCode::UNKNOWN);
     }
 
-    debugprintf("readFile: Exiting function\n");
     return buffer.str();
   }
 
@@ -259,13 +233,12 @@ class AFSImpl final : public FileSystemService::Service {
         debugprintf("write_file: Exiting function\n");
     }
 
-  FileStat read_stat(path filepath) {
+  FileStat readStat(path filepath) {
     struct stat sb;
     FileStat ret;
 
     if (stat(filepath.c_str(), &sb) == -1) {
-      debugprintf("read_stat: failed\n");
-      debugprintf("read_stat: errno = %d\n", errno);
+      debugprintf("[readStat]: Reading file stat failed with errno=%d\n", errno);
       throw FileSystemException(errno);
     }
 
@@ -280,17 +253,16 @@ class AFSImpl final : public FileSystemService::Service {
     ret.set_atime(sb.st_atime);
     ret.set_mtime(sb.st_mtime);
     ret.set_ctime(sb.st_ctime);
-
     return ret;
   }
 
   void make_dir(path filepath, int mode) {
-        dbgprintf("make_dir: Entering function\n");
+("make_dir: Entering function\n");
         if (mkdir(filepath.c_str(), mode) == -1) {
-            dbgprintf("make_dir: Exiting function\n");
+            debugprintf("make_dir: Exiting function\n");
             throw FileSystemException(errno);
         }
-        dbgprintf("make_dir: Exiting function\n");
+        debugprintf("make_dir: Exiting function\n");
     }
 
     void remove_dir(path filepath) {
@@ -300,7 +272,7 @@ class AFSImpl final : public FileSystemService::Service {
     }
 
     void list_dir(path filepath, ListDirResponse* reply) {
-        dbgprintf("list_dir: Entered function\n");
+        debugprintf("list_dir: Entered function\n");
         for (const auto& entry : fs::directory_iterator(filepath)) {
             DirectoryEntry* msg = reply->add_entries();
             msg->set_file_name(entry.path().filename());
@@ -308,83 +280,84 @@ class AFSImpl final : public FileSystemService::Service {
                                                                                          : FileMode::UNSUPPORTED);
             msg->set_size(is_regular_file(entry.status()) ? file_size(entry) : 0);
         }
-        dbgprintf("list_dir: Exiting function\n");
+        debugprintf("list_dir: Exiting function\n");
     }
 
  public:
     explicit AFSImpl(path root) : root(root) {}
 
-    Status Ping(ServerContext* context, const PingMessage* request, PingMessage* reply) override {
+    Status Ping(ServerContext* context, const PingMessage* req, PingMessage* resp) override {
+        debugprintf("[Ping]: Returning Success.\n");
         return Status::OK;
     }
 
-    Status GetFileStat(ServerContext* context, const GetFileStatRequest* request, GetFileStatResponse* reply) override {
-      debugprintf("GetFileStat: Entering function\n");
+    Status GetFileStat(ServerContext* context, const GetFileStatRequest* req, GetFileStatResponse* resp) override {
+      debugprintf("[GetFileStat]: Function entered.\n");
       try {
-        path filepath = getPath(request->pathname());
-        debugprintf("GetFileStat: filepath = %s\n", filepath.c_str());
+        path filepath = getPath(req->pathname());
+        debugprintf("[GetFileStat]: filepath = %s\n", filepath.c_str());
 
-        auto status = read_stat(filepath);
-        reply->mutable_status()->CopyFrom(status);
+        auto stat = readStat(filepath);
+        resp->mutable_stat()->CopyFrom(stat);
+         debugprintf("[GetFileStat]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
-        debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
+        debugprintf("[GetFileStat]: Protocol Exception: %d %s\n", e.get_code(), e.what());
         return Status(e.get_code(), e.what());
       } catch(const FileSystemException& e) {
-        debugprintf("[System Exception: %d]\n", e.get_fs_errno());
-        reply -> set_fs_errno(e.get_fs_errno());
+        debugprintf("[GetFileStat]: System Exception: %d\n", e.get_fs_errno());
+        resp -> set_fs_errno(e.get_fs_errno());
         return Status::OK;
       } catch (const std::exception& e) {
-        debugprintf("[Unexpected Exception] %s\n", e.what());
+        debugprintf("[GetFileStat]: Unexpected Exception %s\n", e.what());
         return Status(StatusCode::UNKNOWN, e.what());
       }
     }
 
-    Status Fetch(ServerContext* context, const FetchRequest* request, FetchResponse* reply) override {
-      path filepath = getPath(request->pathname());
+    Status Fetch(ServerContext* context, const FetchRequest* req, FetchResponse* resp) override {
+      debugprintf("[Fetch] Function entered.\n");
+      path filepath = getPath(req->pathname());
       try {
         auto content = readFile(filepath);
-        reply->set_file_contents(content);
-        reply->mutable_time_modify()->CopyFrom(readModifyTime(filepath));
+        resp->mutable_time_modified()->CopyFrom(readModifyTime(filepath));
+        resp->set_file_contents(content);
+        debugprintf("[Fetch] Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
-        debugprintf("Protocol Exception: %d %s\n", e.get_code(), e.what());
+        debugprintf("[Fetch]: Protocol Exception: %d: %s\n", e.get_code(), e.what());
         return Status(e.get_code(), e.what());
       } catch(const FileSystemException& e) {
-        debugprintf("System Exception: %d\n", e.get_fs_errno());
-        reply -> set_fs_errno(e.get_fs_errno());
+        debugprintf("[Fetch]: System Exception: %d\n", e.get_fs_errno());
+        resp -> set_fs_errno(e.get_fs_errno());
         return Status::OK;
       } catch (const std::exception& e) {
-        debugprintf("Unexpected Exception: %s\n", e.what());
+        debugprintf("[Fetch]: Unexpected Exception: %s\n", e.what());
         return Status(StatusCode::UNKNOWN, e.what());
       }
     }
 
-    Status TestAuth(ServerContext* context, const TestAuthRequest* request, TestAuthResponse* reply) override {
-      debugprintf("TestAuth: Entering function\n");
+    Status TestAuth(ServerContext* context, const TestAuthRequest* req, TestAuthResponse* resp) override {
+      debugprintf("[TestAuth]: Function entered.\n");
       try {
-        path filepath = getPath(request->pathname());
-        debugprintf("TestAuth: filepath = %s\n", filepath.c_str());
+        path filepath = getPath(req->pathname());
+        debugprintf("[TestAuth]: filepath = %s\n", filepath.c_str());
         
-        auto ts0 = readModifyTime(filepath);
-        auto ts1 = request->time_modify();
-        bool changed = (ts0.sec() != ts1.sec()) || (ts0.nsec() != ts1.nsec());
+        auto ts_server = readModifyTime(filepath);
+        auto ts_client = req->time_modified();
+        bool file_changed = (ts_server.sec() != ts_client.sec()) || (ts_server.nsec() != ts_client.nsec());
 
-        reply->set_has_changed(changed);
-        debugprintf("TestAuth: Exiting function on Success path\n");
+        resp->set_file_changed(file_changed);
+        debugprintf("[TestAuth]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
-        debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
-        debugprintf("TestAuth: Exiting function on ProtocolException path\n");
+        debugprintf("[TestAuth]: Protocol Exception: %d %s\n", e.get_code(), e.what());
         return Status(e.get_code(), e.what());
       } catch(const FileSystemException& e) {
-        debugprintf("[System Exception: %d]\n", e.get_fs_errno());
-        // Instead of reporting filesystem error, invalidate the cache entry
-        reply -> set_has_changed(true); 
+        debugprintf("[TestAuth]: System Exception: %d\n", e.get_fs_errno());
+        resp -> set_file_changed(true); 
         return Status::OK;
       } catch (const std::exception& e) {
-        debugprintf("[Unexpected Exception] %s\n", e.what());
-        debugprintf("TestAuth: Exiting function on Exception path\n");
+        debugprintf("[TestAuth]: Unexpected Exception %s\n", e.what());
         return Status(StatusCode::UNKNOWN, e.what());
       }
     }
@@ -437,7 +410,7 @@ class AFSImpl final : public FileSystemService::Service {
     }
 
     Status ReadDir(ServerContext* context, const ListDirRequest* request, ListDirResponse* reply) override {
-      dbgprintf("ListDir: Entering function\n");
+      debugprintf("ListDir: Entering function\n");
       try {
         path filepath = getPath(request->pathname());
         printf("ListDir: filepath = %s\n", filepath.c_str());
@@ -468,88 +441,88 @@ class AFSImpl final : public FileSystemService::Service {
     }
 
     Status Store(ServerContext* context, const StoreRequest* request, StoreResponse* reply) override {
-        dbgprintf("Store: Entering function\n");
+        debugprintf("Store: Entering function\n");
         try {
-            path filepath = to_storage_path(request->pathname());
-            dbgprintf("Store: filepath = %s\n", filepath.c_str());
+            path filepath = getPath(request->pathname());
+            debugprintf("Store: filepath = %s\n", filepath.c_str());
 
             writeFile(filepath, request->file_contents());
             
             reply->mutable_time_modify()->CopyFrom(readModifyTime(filepath));
-            dbgprintf("Store: Exiting function on Success path\n");
+            debugprintf("Store: Exiting function on Success path\n");
             return Status::OK;
 
         } catch (const ProtocolException& e) {
-            dbgprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
-            dbgprintf("Store: Exiting function on ProtocolException path\n");
+            debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
+            debugprintf("Store: Exiting function on ProtocolException path\n");
             return Status(e.get_code(), e.what());
         } catch(const FileSystemException& e) {
-            dbgprintf("[System Exception: %d]\n", e.get_fs_errno());
+            debugprintf("[System Exception: %d]\n", e.get_fs_errno());
             reply -> set_fs_errno(e.get_fs_errno());
             return Status::OK;
         } catch (const std::exception& e) {
             errprintf("[Unexpected Exception] %s\n", e.what());
-            dbgprintf("Store: Exiting function on Exception path\n");
+            debugprintf("Store: Exiting function on Exception path\n");
             return Status(StatusCode::UNKNOWN, e.what());
         }
     }
     Status Mknod(ServerContext* context, const MknodRequest* request, MknodResponse* reply) override {
-        dbgprintf("Mknod: Entering function\n");
+        debugprintf("Mknod: Entering function\n");
 
         try {
-            path filepath = to_storage_path(request->pathname());
-            dbgprintf("Mknod: filepath = %s\n", filepath.c_str());
+            path filepath = getPath(request->pathname());
+            debugprintf("Mknod: filepath = %s\n", filepath.c_str());
 
             // auto lock = locks.GetWriteLock(filepath.string());
             int ret = mknod(filepath.c_str(), request->mode(), request->dev());
             
-            dbgprintf("Mknod: Exiting function on Success path\n");
+            debugprintf("Mknod: Exiting function on Success path\n");
             return Status::OK;
         } catch (const ProtocolException& e) {
-            dbgprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
-            dbgprintf("Mknod: Exiting function on ProtocolException path\n");
+            debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
+            debugprintf("Mknod: Exiting function on ProtocolException path\n");
             return Status(e.get_code(), e.what());
         } catch(const FileSystemException& e) {
-            dbgprintf("[System Exception: %d]\n", e.get_fs_errno());
+            debugprintf("[System Exception: %d]\n", e.get_fs_errno());
             reply -> set_fs_errno(e.get_fs_errno());
             return Status::OK;
         } catch (const std::exception& e) {
             errprintf("[Unexpected Exception] %s\n", e.what());
-            dbgprintf("Mknod: Exiting function on Exception path\n");
+            debugprintf("Mknod: Exiting function on Exception path\n");
             return Status(StatusCode::UNKNOWN, e.what());
         }
     }
     void delete_file(path filepath) {
-        dbgprintf("delete_file: Entering function\n");
+        debugprintf("delete_file: Entering function\n");
         if (unlink(filepath.c_str()) == -1) {
-            dbgprintf("delete_file: Exiting function\n");
+            debugprintf("delete_file: Exiting function\n");
             throw FileSystemException(errno);
         }
-        dbgprintf("delete_file: Exiting function\n");
+        debugprintf("delete_file: Exiting function\n");
     }
     Status Remove(ServerContext* context, const RemoveRequest* request, RemoveResponse* reply) override {
-        dbgprintf("Remove: Entering function\n");
+        debugprintf("Remove: Entering function\n");
         try {
-            path filepath = to_storage_path(request->pathname());
+            path filepath = getPath(request->pathname());
             cout << "Remove: filepath = " << filepath << endl;
 
             // auto lock = locks.GetWriteLock(filepath.string());
             
             delete_file(filepath);
 
-            dbgprintf("Remove: Exiting function on Success path\n");
+            debugprintf("Remove: Exiting function on Success path\n");
             return Status::OK;
         } catch (const ProtocolException& e) {
-            dbgprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
-            dbgprintf("Remove: Exiting function on ProtocolException path\n");
+            debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
+            debugprintf("Remove: Exiting function on ProtocolException path\n");
             return Status(e.get_code(), e.what());
         } catch(const FileSystemException& e) {
-            dbgprintf("[System Exception: %d]\n", e.get_fs_errno());
+            debugprintf("[System Exception: %d]\n", e.get_fs_errno());
             reply -> set_fs_errno(e.get_fs_errno());
             return Status::OK;
         } catch (const std::exception& e) {
             errprintf("[Unexpected Exception] %s\n", e.what());
-            dbgprintf("Remove: Exiting function on Exception path\n");
+            debugprintf("Remove: Exiting function on Exception path\n");
             return Status(StatusCode::UNKNOWN, e.what());
         }
     }

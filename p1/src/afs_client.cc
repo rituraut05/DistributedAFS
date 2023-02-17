@@ -5,7 +5,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-
 #include <grpcpp/grpcpp.h>
 #include <string>
 #include <chrono>
@@ -21,7 +20,7 @@
 #include "afs.grpc.pb.h"
 #include "afs_client.hh"
 //#include <unreliablefs_ops.h>
-string cache_root;
+string cache_root; // Why is this required?
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -69,10 +68,10 @@ using afs::RemoveRequest;
 using afs::RemoveResponse;
 
 #define DEBUG                 1                                     // for debugging
-#define dbgprintf(...)        if (DEBUG) { printf(__VA_ARGS__); }   // for debugging
+#define debugprintf(...)        if (DEBUG) { printf(__VA_ARGS__); }   // for debugging
 #define RETRY_TIME_START      1                                     // in seconds
 #define RETRY_TIME_MULTIPLIER 2                                     // for rpc 
-#define MAX_RETRY             5                                     // rpc retry
+#define MAX_RETRIES           5                                     // rpc retry
 #define SINGLE_LOG            1                                     // Turns on single log functionality
 
 enum fuse_readdir_flags {
@@ -89,25 +88,24 @@ string get_relative_path(string path, string root) {
 	return path_copy;
 }
 
-bool FileExists(std::string path) {
+bool file_exists(std::string path) {
 	struct stat s;   
 	return (stat(path.c_str(), &s) == 0); 
 }
 
-uint32_t GetModifyTime(std::string filepath, timespec * t) {
-	dbgprintf("GetModifyTime: Entering function\n");
+int GetModifyTime(std::string path, timespec * t) {
+	debugprintf("[GetModifyTime]: Function entered.\n");
 	struct stat sb;
-	if (stat(filepath.c_str(), &sb) == -1) 
-	{
-		dbgprintf("GetModifyTime: Failed\n");
+	if (stat(path.c_str(), &sb) == -1) {
+		debugprintf("[GetModifyTime]: Failed to stat file.\n");
 		return -1;
 	}
-	dbgprintf("GetModifyTime: Exiting function\n");
+	debugprintf("[GetModifyTime]: Function ended.\n");
 	*t = sb.st_mtim;
 	return 0;
 }
 
-int set_timings_opened(int fd, timespec t) {
+int set_file_open_time(int fd, timespec t) {
 	struct timespec p[2] = {t,t};
 	return futimens(fd,p);
 }
@@ -134,7 +132,7 @@ vector<string> tokenize_path(string path, char delim, bool is_file) {
 }
 
 int create_path(string relative_path, bool is_file, string root) {
-	dbgprintf("create_path: Entering function\n");
+	debugprintf("create_path: Entering function\n");
 	vector<string> tokens = tokenize_path(relative_path, '/', is_file);
 
 	// Change base path later
@@ -147,20 +145,20 @@ int create_path(string relative_path, bool is_file, string root) {
 		int r = stat(base_path.c_str(), &s);
 		if (r != 0 && errno == 2) 
 		{
-				dbgprintf("create_path: stat() ENOENT\n");
+				debugprintf("create_path: stat() ENOENT\n");
 				if (mkdir(base_path.c_str(), S_IRWXU) != 0)
 				{
-						dbgprintf("create_path: mkdir() failed : %d\n", errno);
+						debugprintf("create_path: mkdir() failed : %d\n", errno);
 						return -1;
 				}
 		}
 		else if (r != 0)
 		{
-				dbgprintf("create_path: stat() failed : %d\n", errno);
+				debugprintf("create_path: stat() failed : %d\n", errno);
 				return -1;
 		}		
 	}
-	dbgprintf("create_path: Exiting function\n");
+	debugprintf("create_path: Exiting function\n");
 	return 0;
 }
 
@@ -181,7 +179,7 @@ switch(code) {
 	case StatusCode::UNAUTHENTICATED:
 		return EPERM;
 	default:
-		return EIO; // fall back to IO err for unexpected issues
+		return EIO;
 	}
 }
 
@@ -208,7 +206,7 @@ extern "C" {
 				sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 				status = stub_->Ping(&context, request, &reply);
 				retryCount++;
-			} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
 			// Checking RPC Status
 			if (status.ok()) 
@@ -231,236 +229,210 @@ extern "C" {
 			}
     }
 
-		int FileSystemClient::GetFileStat(std::string abs_path, struct stat *stbuf, std::string root) {
-			dbgprintf("GetFileStat: Entering function\n");
-			GetFileStatRequest request;
-			GetFileStatResponse reply;
+		int FileSystemClient::GetFileStat(std::string abs_path, struct stat *buf, std::string root) {
+			debugprintf("[GetFileStat]: Function entered.\n");
+			GetFileStatRequest req;
+			GetFileStatResponse resp;
 			Status status;
-			uint32_t retryCount = 0;
-
+			int retryCount = 0;
 			std::string path = get_relative_path(abs_path, root);
 
-			request.set_pathname(path);
 			// Make RPC & retry
-			do 
-			{
+			req.set_pathname(path);
+			do {
+				debugprintf("[GetFileStat]: Invoking GetFileStat RPC.\n");
 				ClientContext context;
-				reply.Clear();
-				dbgprintf("GetFileStat: Invoking RPC\n");
-				sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
-				status = stub_->GetFileStat(&context, request, &reply);
+				resp.Clear();
+				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
 				retryCount++;
-			} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+				status = stub_->GetFileStat(&context, req, &resp);
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
 			// Checking RPC Status
 			if (status.ok()) 
 			{
-				dbgprintf("GetFileStat: RPC Success\n");
-				uint server_errno = reply.fs_errno();
+				debugprintf("[GetFileStat]: GetFileStat RPC success.\n");
+				int server_errno = resp.fs_errno();
 				if(server_errno) {
-					dbgprintf("...but error %d on server\n", server_errno);
-					dbgprintf("GetFileStat: Exiting function\n"); 
+					debugprintf("[GetFileStat]: Error %d on server.\n", server_errno);
+					debugprintf("[GetFileStat]: Function ended due to server failure.\n"); 
 					errno = server_errno;
 					return -1;
 				}
 				
-				stbuf->st_ino = reply.status().ino();
-				stbuf->st_mode = reply.status().mode();
-				stbuf->st_nlink = reply.status().nlink();
-				stbuf->st_uid = reply.status().uid();
-				stbuf->st_gid = reply.status().gid();
-				stbuf->st_size = reply.status().size();
-				stbuf->st_blksize = reply.status().blksize();
-				stbuf->st_blocks = reply.status().blocks();
-				stbuf->st_atime = reply.status().atime();
-				stbuf->st_mtime = reply.status().mtime();
-				stbuf->st_ctime = reply.status().ctime();
-				dbgprintf("GetFileStat: Exiting function, ino = %d\n", stbuf->st_ino);
+				buf->st_ino = resp.stat().ino();
+				buf->st_mode = resp.stat().mode();
+				buf->st_nlink = resp.stat().nlink();
+				buf->st_uid = resp.stat().uid();
+				buf->st_gid = resp.stat().gid();
+				buf->st_size = resp.stat().size();
+				buf->st_blksize = resp.stat().blksize();
+				buf->st_blocks = resp.stat().blocks();
+				buf->st_atime = resp.stat().atime();
+				buf->st_mtime = resp.stat().mtime();
+				buf->st_ctime = resp.stat().ctime();
+				debugprintf("[GetFileStat]: Function ended; ino = %d\n", buf->st_ino);
 				return 0;
 			} 
-			else
-			{
-				dbgprintf("GetFileStat: RPC Failed\n");
-				dbgprintf("GetFileStat: Exiting function\n");
+			else {
+				debugprintf("[GetFileStat]: GetFileStat RPC failed.\n");
+				debugprintf("[GetFileStat]: Function ended due to RPC failure.\n");
 				errno = transform_rpc_err(status.error_code());
 				return -1;
 			}
 		}
 
 		int FileSystemClient::OpenFile(std::string abs_path, std::string root) {
-			dbgprintf("OpenFile: Inside function\n");
+			debugprintf("[OpenFile]: Function entered.\n");
 			int file;
-			FetchRequest request;
-			FetchResponse reply;
+			int retryCount = 0;
+			FetchRequest req;
+			FetchResponse resp;
 			Status status;
-			uint32_t retryCount = 0;
-
 			std::string path = get_relative_path(abs_path, root);
 	
-			auto test_auth_result = TestAuth(abs_path, root);
-			
-			if (!test_auth_result.status.ok() || test_auth_result.response.has_changed())
-			{  
-				if(test_auth_result.status.ok()) {
-					dbgprintf("OpenFile: TestAuth reports changed\n");
+			auto test_auth_resp = TestAuth(abs_path, root);			
+			if (!test_auth_resp.status.ok() || test_auth_resp.response.file_changed()) {  
+				if(test_auth_resp.status.ok()) {
+					debugprintf("[OpenFile]: TestAuth returns file changed. Fetching file from server.\n");
 				} else {
-					dbgprintf("OpenFile: TestAuth RPC failed\n");
+					debugprintf("[OpenFile]: Failure invoking TestAuth RPC. Fetching file from server.\n");
 				}
 					
-				request.set_pathname(path);
-
-				// Make RPC & retry 
-				do 
-				{
+				req.set_pathname(path);
+				do {
+					debugprintf("[OpenFile]: Invoking Fetch RPC.\n");
 					ClientContext context;
-					reply.Clear();
-					dbgprintf("OpenFile: Invoking RPC\n");
-					sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
-					status = stub_->Fetch(&context, request, &reply);
+					resp.Clear();
+					sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
 					retryCount++;
-				} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE );
+					status = stub_->Fetch(&context, req, &resp);
+				} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 	
 				// Checking RPC Status
-				if (status.ok()) 
-				{
-					dbgprintf("OpenFile: RPC Success\n");
-					uint server_errno = reply.fs_errno();
+				if (status.ok()) {
+					debugprintf("[OpenFile]: Fetch RPC success.\n");
+					int server_errno = resp.fs_errno();
 					if(server_errno) {
-						dbgprintf("Error %d on server\n", server_errno);
-						dbgprintf("OpenFile: Exiting function due to failure\n");
+						debugprintf("[OpenFile] Error %d on server\n", server_errno);
+						debugprintf("[OpenFile]: Function ended in failure.\n");
 						errno = server_errno;
 						return -1;
 					}
 
 					// create directory tree if not exists, as it exists on the server
-					if (create_path(path, true, root) != 0)
-					{
-						dbgprintf("create_path: failed\n");
+					if (create_path(path, true, root) != 0) {
+						debugprintf("[OpenFile]: create_path() call failed.\n");
 						return -1;
 					}
 
-					dbgprintf("OpenFile: create_path() Success\n");
-
 					// opens file if it already exists, else creates the file at the path 
 					file = open(abs_path.c_str(), O_RDWR | O_TRUNC | O_CREAT, 0666);
-					if (file == -1)
-					{
-						dbgprintf("OpenFile: open() failed\n");
+					if (file == -1) {
+						debugprintf("[OpenFile]: open() to copy file contents failed.\n");
 						return -1;
 					}
 
 					// Writes the contents fetched from server to the file 
-					if (write(file, reply.file_contents().c_str(), reply.file_contents().length()) == -1)
-					{
-						dbgprintf("OpenFile: write() failed\n");
+					if (write(file, resp.file_contents().c_str(), resp.file_contents().length()) == -1) {
+						debugprintf("[OpenFile]: write() to file in client cache failed.\n");
 						return -1;
 					}
-									
-					auto timing = reply.time_modify();
-							
-					struct timespec t;
-					t.tv_sec = timing.sec();
-					t.tv_nsec = timing.nsec();
-							
-					if(set_timings_opened(file, t) == -1) {
-						dbgprintf("OpenFile: error (%d) setting file timings\n", errno);
-					} else {
-						dbgprintf("OpenFile: updated file timings\n");
-					}
-							
+
 					// flush contents to file in client
-					if (fsync(file) == -1)
-					{
-						dbgprintf("OpenFile: fsync() failed\n");
+					if (fsync(file) == -1) {
+						debugprintf("[OpenFile]: fsync() to file in client cache failed.\n");
 						return -1;
+					}
+
+					// set file open and modified times according to what server sends
+					struct timespec t;
+					auto modified_time = resp.time_modified();
+					t.tv_sec = modified_time.sec();
+					t.tv_nsec = modified_time.nsec();	
+					if(set_file_open_time(file, t) == -1) {
+						debugprintf("[OpenFile]: Error (%d) setting file open and modified timings.\n", errno);
 					}
 							
 					// close the file on local client
-					if (close(file) == -1)
-					{
-						dbgprintf("OpenFile: close() failed\n");
+					if (close(file) == -1) {
+						debugprintf("[OpenFile]: close() on file in client cache failed.\n");
 						return -1;
 					}
-							
-						dbgprintf("OpenFile: successfully wrote %d bytes to cache\n", (int)reply.file_contents().length()); 
+					debugprintf("[OpenFile]: Successfully wrote %d bytes to cache.\n", (int)resp.file_contents().length()); 
 				} 
 				else 
 				{
-					dbgprintf("OpenFile: RPC Failure\n");
+					debugprintf("[OpenFile]: Fetch RPC Failed.\n");
 					errno = transform_rpc_err(status.error_code());
 					return -1;
 				}
 			} else {
-				dbgprintf("OpenFile: TestAuth reports no change\n");
+				debugprintf("[OpenFile]: TestAuth reported no change in file.\n");
 			}
 
 			file = open(abs_path.c_str(), O_RDWR | O_CREAT, 0666); 
 			if (file == -1)
 			{
-				dbgprintf("OpenFile: open() failed\n");
+				debugprintf("[OpenFile]: open() on client copy failed.\n");
 				return -1;
 			}
 			
-			dbgprintf("OpenFile: Exiting function\n");
+			debugprintf("[OpenFile]: Function ended.\n");
 			return file;
 		}
 
-		TestAuthReturnType FileSystemClient::TestAuth(std::string abs_path, std::string root) {
-			dbgprintf("TestAuth: Entering function\n");
-			TestAuthRequest request;
-			TestAuthResponse reply;
+		TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root) {
+			debugprintf("[TestAuth]: Function entered.\n");
+			TestAuthRequest req;
+			TestAuthResponse resp;
 			Timestamp t;
-			timespec modifyTime;
+			timespec fileModifiedTime;
 			Status status;
-			uint32_t retryCount = 0;
-
+			int retryCount = 0;
 			std::string path = get_relative_path(abs_path, root);
 
 			// Check if local file exists
-			if (!FileExists(abs_path))
-			{
-				dbgprintf("TestAuth: Local file does not exist\n");
-				reply.set_has_changed(true);
-				return TestAuthReturnType(status, reply);
+			// Set TestAuth response to true if local file doesn't exist
+			if (!file_exists(abs_path)) {
+				debugprintf("[TestAuth]: File does not exist locally. Set TestAuth response to true.\n");
+				resp.set_file_changed(true);
+				return TestAuthReturn(status, resp);
 			}
 			
 			// Get local modified time
-			if (GetModifyTime(abs_path, &modifyTime) != 0)
-			{
-				dbgprintf("TestAuth: Exiting function\n");
-				reply.set_has_changed(true); 
-				return TestAuthReturnType(status, reply);
+			// Set TestAuth response to true if getting local file modified time fails
+			if (GetModifyTime(abs_path, &fileModifiedTime) != 0) {
+				debugprintf("[TestAuth]: Failure to get local file modified time. Setting TestAuth response to true.\n");
+				resp.set_file_changed(true); 
+				return TestAuthReturn(status, resp);
 			}
 
 			// Set Request
-			request.set_pathname(path);
-			t.set_sec(modifyTime.tv_sec);
-			t.set_nsec(modifyTime.tv_nsec);
-			request.mutable_time_modify()->CopyFrom(t);
+			req.set_pathname(path);
+			t.set_sec(fileModifiedTime.tv_sec);
+			t.set_nsec(fileModifiedTime.tv_nsec);
+			req.mutable_time_modified()->CopyFrom(t);
 
-			// Make RPC
-			// Retry w backoff
-			do 
-			{
+			// Make RPC and retry 
+			do {
+				debugprintf("[TestAuth]: Invoking TestAuth RPC.\n");
 				ClientContext context;
-				reply.Clear();
-				dbgprintf("TestAuth: Invoking RPC\n");
-				sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
-				status = stub_->TestAuth(&context, request, &reply);
+				resp.Clear();
+				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
 				retryCount++;
-			} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+				status = stub_->TestAuth(&context, req, &resp);
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-			if (status.ok()) 
-			{
-				dbgprintf("TestAuth: RPC Success\n");
+			if (status.ok()) {
+				debugprintf("[TestAuth]: TestAuth RPC success.\n");
 			}
-			else
-			{
-				dbgprintf("TestAuth: RPC Failure\n");
+			else {
+				debugprintf("[TestAuth]: TestAuth RPC failed.\n");
 			}
 
-			dbgprintf("TestAuth: Exiting function\n");
-			return TestAuthReturnType(status, reply);
+			debugprintf("[TestAuth]: Function ended successfully.\n");
+			return TestAuthReturn(status, resp);
 		}	
 
 		
@@ -485,7 +457,7 @@ extern "C" {
 				sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 				status = stub_->MakeDir(&context, request, &reply);
 				retryCount++;
-			} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
    	  
       // Checking RPC Status	
 			if (status.ok()) {
@@ -533,7 +505,7 @@ extern "C" {
 	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 	    status = stub_->RemoveDir(&context, request, &reply);
 	    retryCount++;
-	} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+	} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
         // Checking RPC Status
 
@@ -585,7 +557,7 @@ extern "C" {
     	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
     	    status = stub_->ReadDir(&context, request, &reply);
     	    retryCount++;
-    	} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+    	} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     
 	// std::cout << "count = " << reply.entries().size() << std::endl;
@@ -642,7 +614,7 @@ extern "C" {
 
 	string to_flat_file(string relative_path)
 	{
-		dbgprintf("to_flat_file: Entering function\n");
+		debugprintf("to_flat_file: Entering function\n");
 		for (int i=0; i<relative_path.length(); i++)
 		{
 			if (relative_path[i] == '/') {
@@ -650,13 +622,13 @@ extern "C" {
 			}
 		}
 		string flat_file = cache_root + relative_path + ".tmp"; 
-		dbgprintf("to_flat_file: Exiting function\n");
+		debugprintf("to_flat_file: Exiting function\n");
 		return flat_file;
 	}
 
 	bool isFileModifiedv2(string rel_path)
 	{
-		return FileExists(to_flat_file(rel_path));
+		return file_exists(to_flat_file(rel_path));
 	}
 
 
@@ -666,7 +638,7 @@ extern "C" {
 		ifstream input_file(path);
 		if (!input_file.is_open()) 
 		{
-			dbgprintf("readFileIntoString(): failed\n");
+			debugprintf("readFileIntoString(): failed\n");
 			return string();
 		}
 		return string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
@@ -698,10 +670,10 @@ extern "C" {
 
 	int removePendingFile(string filename)
 	{
-		dbgprintf("removePendingFile: Entering function\n");
+		debugprintf("removePendingFile: Entering function\n");
 		string command = "rm -f " + filename;
-		dbgprintf("removePendingFile: command %s\n", command.c_str());
-		dbgprintf("removePendingFile: Exiting function\n");
+		debugprintf("removePendingFile: command %s\n", command.c_str());
+		debugprintf("removePendingFile: Exiting function\n");
 		return system(command.c_str());
 	}
 	int set_timings(string cache_path, timespec t) {
@@ -711,7 +683,7 @@ extern "C" {
 
 	int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
 	{
-		dbgprintf("CloseFile: Entered function\n");
+		debugprintf("CloseFile: Entered function\n");
 		StoreRequest request;
 		StoreResponse reply;
 		Status status;
@@ -722,7 +694,7 @@ extern "C" {
 		if (fd != -1)
 			if (close(fd))
 			{
-				dbgprintf("CloseFile: close() failed\n");
+				debugprintf("CloseFile: close() failed\n");
 				return -1;
 			}
 
@@ -748,21 +720,21 @@ extern "C" {
 		{
 			ClientContext context;
 			reply.Clear();
-			dbgprintf("CloseFile: Invoking RPC\n");
+			debugprintf("CloseFile: Invoking RPC\n");
 			sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 			status = stub_->Store(&context, request, &reply);
 			retryCount++;
-		} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
 		// Checking RPC Status
 		if (status.ok()) 
 		{
-			dbgprintf("CloseFile: RPC Success\n");
+			debugprintf("CloseFile: RPC Success\n");
 
 			uint server_errno = reply.fs_errno();
 			if(server_errno) {
-				dbgprintf("...but error %d on server\n", server_errno);
-				dbgprintf("CloseFile: Exiting function\n"); 
+				debugprintf("...but error %d on server\n", server_errno);
+				debugprintf("CloseFile: Exiting function\n"); 
 				errno = server_errno;
 					return -1;
 			}
@@ -777,18 +749,18 @@ extern "C" {
 			t.tv_nsec = timing.nsec();
 			
 			if(set_timings(path,t) == -1) {
-				dbgprintf("CloseFile: error (%d) setting file timings\n",errno);
+				debugprintf("CloseFile: error (%d) setting file timings\n",errno);
 			} else {
-				dbgprintf("CloseFile: updated file timings\n");
+				debugprintf("CloseFile: updated file timings\n");
 			}
 			
-			dbgprintf("CloseFile: Exiting function\n");
+			debugprintf("CloseFile: Exiting function\n");
 			return 0;
 		} 
 		else 
 		{
-			dbgprintf("CloseFile: RPC Failure\n");
-			dbgprintf("CloseFile: Exiting function\n");
+			debugprintf("CloseFile: RPC Failure\n");
+			debugprintf("CloseFile: Exiting function\n");
 			errno = transform_rpc_err(status.error_code());
 				return -1;
 		}
@@ -796,7 +768,7 @@ extern "C" {
 
 	int FileSystemClient::CreateFile(std::string abs_path, std::string root, mode_t mode, dev_t rdev)
 	{
-		dbgprintf("CreateFile: Entering function\n");
+		debugprintf("CreateFile: Entering function\n");
 		MknodRequest request;
 		MknodResponse reply;
 		Status status;
@@ -813,21 +785,21 @@ extern "C" {
 		{
 			ClientContext context;
 			reply.Clear();
-			dbgprintf("CreateFile: Invoking RPC\n");
+			debugprintf("CreateFile: Invoking RPC\n");
 			sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 			status = stub_->Mknod(&context, request, &reply);
 			retryCount++;
-		} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE);
+		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
 		// Checking RPC Status
 		if (status.ok()) 
 		{
-			dbgprintf("CreateFile: RPC Success\n");
-			dbgprintf("CreateFile: Exiting function\n");
+			debugprintf("CreateFile: RPC Success\n");
+			debugprintf("CreateFile: Exiting function\n");
 			uint server_errno = reply.fs_errno();
 			if(server_errno) {
-				dbgprintf("...but error %d on server\n", server_errno);
-				dbgprintf("CreateFile: Exiting function\n"); 
+				debugprintf("...but error %d on server\n", server_errno);
+				debugprintf("CreateFile: Exiting function\n"); 
 				errno = server_errno;
 					return -1;
 			}
@@ -838,8 +810,8 @@ extern "C" {
 		} 
 		else 
 		{
-			dbgprintf("CreateFile: RPC Failure\n");
-			dbgprintf("CreateFile: Exiting function\n");
+			debugprintf("CreateFile: RPC Failure\n");
+			debugprintf("CreateFile: Exiting function\n");
 			errno = transform_rpc_err(status.error_code());
 				return -1;
 		}
@@ -847,7 +819,7 @@ extern "C" {
 
 	int FileSystemClient::DeleteFile(std::string abs_path, std::string root) 
 	{
-		dbgprintf("DeleteFile: Entered function\n");
+		debugprintf("DeleteFile: Entered function\n");
 		RemoveRequest request;
 		RemoveResponse reply;
 		Status status;
@@ -862,29 +834,29 @@ extern "C" {
 		{
 			ClientContext context;
 			reply.Clear();
-			dbgprintf("DeleteFile: Invoking RPC\n");
+			debugprintf("DeleteFile: Invoking RPC\n");
 			sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 			status = stub_->Remove(&context, request, &reply);
 			retryCount++;
-		} while (retryCount < MAX_RETRY && status.error_code() == StatusCode::UNAVAILABLE );
+		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE );
 		
 
 		// Checking RPC Status 
 		if (status.ok()) 
 		{
-			dbgprintf("DeleteFile: RPC success\n");
+			debugprintf("DeleteFile: RPC success\n");
 			uint server_errno = reply.fs_errno();
 			if(server_errno) {
-				dbgprintf("...but error %d on server\n", server_errno);
-				dbgprintf("DeleteFile: Exiting function\n"); 
+				debugprintf("...but error %d on server\n", server_errno);
+				debugprintf("DeleteFile: Exiting function\n"); 
 				errno = server_errno;
 					return -1;
 			}
 			
-			dbgprintf("DeleteFile: Exiting function\n");
+			debugprintf("DeleteFile: Exiting function\n");
 
 			// remove from local cache
-			if (FileExists(path))
+			if (file_exists(path))
 			{
 				unlink(path.c_str());
 			}
@@ -893,8 +865,8 @@ extern "C" {
 		} 
 		else
 		{
-			dbgprintf("DeleteFile: RPC failure\n");
-			dbgprintf("DeleteFile: Exiting function\n");
+			debugprintf("DeleteFile: RPC failure\n");
+			debugprintf("DeleteFile: Exiting function\n");
 			errno = transform_rpc_err(status.error_code());
 				return -1;
 		}                
