@@ -23,7 +23,7 @@ class FileSystemClient {
     int GetFileStat(std::string path, struct stat *buf, std::string root);
     int OpenFile(std::string path, std::string root);
     int CloseFile(int fd, std::string path, std::string root);
-    int CreateFile(std::string abs_path, std::string root, mode_t mode, dev_t rdev);
+    int CreateFile(std::string abs_path, std::string root, mode_t mode, int flags);
     int DeleteFile(std::string abs_path, std::string root);
     int Access(std::string abs_path, int mode, std::string root);
     TestAuthReturn TestAuth(std::string path, std::string root);

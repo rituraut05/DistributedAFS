@@ -77,6 +77,7 @@ void initgRPC(char* server_addr, char* mountpoint) {
     WFileSystemClient c = create_FileSystemClient(server_addr);
 
     printf("--------------- Ping ---------------\n");
+    printf("Server Addr: %s\n", server_addr);
     int ping_time;
     int p_rc = ping_FileSystemClient(c, &ping_time);
     printf("Ping return code: %d; Ping time: %d\n", p_rc, ping_time);
@@ -85,7 +86,6 @@ void initgRPC(char* server_addr, char* mountpoint) {
         client = c;
         int mtpt_length = strlen(mountpoint);
         if(mountpoint[mtpt_length-1] != '/') {
-            printf("-------------%s %c\n", mountpoint, mountpoint[mtpt_length-1]);
             mountpoint[mtpt_length] = '/';
             mountpoint[mtpt_length + 1] = '\0';
         };
@@ -121,6 +121,9 @@ int unreliable_getattr(const char *path, struct stat *buf)
     }
 
     memset(buf, 0, sizeof(struct stat));
+    // if (lstat(path, buf) == -1) {
+    //     return -errno;
+    // }
     if (getFileStat_FileSystemClient(client, path, buf, basedir) == -1) {
         return -errno;
     }
@@ -155,7 +158,8 @@ int unreliable_mknod(const char *path, mode_t mode, dev_t dev)
         return ret;
     }
 
-    ret = createFile_FileSystemClient(client, path, basedir, mode, dev);    
+    // ret = createFile_FileSystemClient(client, path, basedir, mode, dev); 
+    ret = mknod(path, mode, dev);     
     if (ret == -1) {
         return -errno;
     }
@@ -331,6 +335,7 @@ int unreliable_open(const char *path, struct fuse_file_info *fi)
     }
     
     ret = open_FileSystemClient(client, path, basedir);
+    // ret = open(path, fi->flags);
     if (ret == -1) {
         return -errno;
     }
@@ -433,7 +438,7 @@ int unreliable_flush(const char *path, struct fuse_file_info *fi)
         return ret;
     }
 
-    printf("flushing!");
+    printf("flushing!\n");
     // ret = close(dup(fi->fh));
     ret = close_FileSystemClient(client, dup(fi->fh), path, basedir);
 
@@ -453,7 +458,7 @@ int unreliable_release(const char *path, struct fuse_file_info *fi)
         return ret;
     }
 
-    printf("releasing!");
+    printf("releasing!\n");
     // ret = close(fi->fh);
     ret = close_FileSystemClient(client, fi->fh, path, basedir);
     if (ret == -1) {
@@ -471,7 +476,6 @@ int unreliable_fsync(const char *path, int datasync, struct fuse_file_info *fi)
     } else if (ret) {
         return ret;
     }
-    printf("fsyncing!");
 
     if (datasync) {
         ret = fdatasync(fi->fh);
@@ -615,12 +619,12 @@ int unreliable_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     // (void) fi;
 
     // while ((de = readdir(dp)) != NULL) {
-        // struct stat st;
-        // memset(&st, 0, sizeof(st));
-        // st.st_ino = de->d_ino;
-        // st.st_mode = de->d_type << 12;
-        // if (filler(buf, de->d_name, &st, 0))
-        //    break;
+    //     struct stat st;
+    //     memset(&st, 0, sizeof(st));
+    //     st.st_ino = de->d_ino;
+    //     st.st_mode = de->d_type << 12;
+    //     if (filler(buf, de->d_name, &st, 0))
+    //        break;
     // }
     // closedir(dp);
 
@@ -719,7 +723,8 @@ int unreliable_create(const char *path, mode_t mode,
         return ret;
     }
     
-    ret = createFile_FileSystemClient(client, path, basedir,  mode, NULL);
+    ret = createFile_FileSystemClient(client, path, basedir,  mode, fi->flags);
+    // ret = open(path, fi->flags, mode);
     if (ret == -1) {
         return -errno;
     }

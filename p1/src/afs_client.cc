@@ -64,8 +64,8 @@ using afs::TestAuthRequest;
 using afs::TestAuthResponse;
 using afs::Timestamp;
 using std::vector;
-using afs::MknodRequest;
-using afs::MknodResponse;
+using afs::CreateRequest;
+using afs::CreateResponse;
 using afs::RemoveRequest;
 using afs::RemoveResponse;
 
@@ -110,6 +110,11 @@ int GetModifyTime(std::string path, timespec * t) {
 int set_file_open_time(int fd, timespec t) {
 	struct timespec p[2] = {t,t};
 	return futimens(fd,p);
+}
+
+int set_timings(string cache_path, timespec t) {
+	struct timespec p[2] = {t,t};
+	return utimensat(AT_FDCWD,cache_path.c_str(),p,0);
 }
 
 vector<string> tokenize_path(string path, char delim, bool is_file) {
@@ -630,43 +635,6 @@ extern "C" {
    	return 0;
     }
 
-	int checkModified_single_log(int fd, string path) {
-		ifstream log;
-		bool changed = false;
-		log.open(cache_root + "log", ios::in);
-		if (log.is_open()) {
-			string line;
-			while (getline(log, line)) {
-				if (line == path)
-				changed = true;
-			}
-		}
-		if (!changed) return 0; 
-		
-		return 1;
-	}
-
-	string to_flat_file(string relative_path)
-	{
-		debugprintf("to_flat_file: Entering function\n");
-		for (int i=0; i<relative_path.length(); i++)
-		{
-			if (relative_path[i] == '/') {
-				relative_path[i] = '%';
-			}
-		}
-		string flat_file = cache_root + relative_path + ".tmp"; 
-		debugprintf("to_flat_file: Exiting function\n");
-		return flat_file;
-	}
-
-	bool isFileModifiedv2(string rel_path)
-	{
-		return file_exists(to_flat_file(rel_path));
-	}
-
-
-
 	string readFileIntoString(string path) 
 	{
 		ifstream input_file(path);
@@ -676,43 +644,6 @@ extern "C" {
 			return string();
 		}
 		return string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
-	}
-
-	void closeEntry_single_log(string path) {
-		// Delete entry from log
-		ifstream log;
-		auto path_old = (cache_root + "log").c_str();
-		auto path_new = (cache_root + "newlog").c_str();
-		
-		log.open(path_old, ios::in);
-		ofstream newlog;
-		newlog.open(path_new, ios::out | ios::trunc);
-		if (log.is_open() && newlog.is_open()) {
-			string line;
-		
-			while (getline(log, line)) {	
-				if (line != path) {
-					newlog << line << endl;     
-			}
-		}
-			// I think this isn't necessary? rename should overwrite
-			remove(path_old);
-			// If we crash here, we lose the log
-			rename(path_new, path_old);
-		}
-	}
-
-	int removePendingFile(string filename)
-	{
-		debugprintf("removePendingFile: Entering function\n");
-		string command = "rm -f " + filename;
-		debugprintf("removePendingFile: command %s\n", command.c_str());
-		debugprintf("removePendingFile: Exiting function\n");
-		return system(command.c_str());
-	}
-	int set_timings(string cache_path, timespec t) {
-		struct timespec p[2] = {t,t};
-		return utimensat(AT_FDCWD,cache_path.c_str(),p,0);
 	}
 
 	int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
@@ -757,17 +688,13 @@ extern "C" {
 				errno = server_errno;
 					return -1;
 			}
-			
-			if (SINGLE_LOG) closeEntry_single_log(path);
-			else removePendingFile(to_flat_file(path));
-
 			auto timing = reply.time_modify();
 			
 			struct timespec t;
 			t.tv_sec = timing.sec();
 			t.tv_nsec = timing.nsec();
 			
-			if(set_timings(path,t) == -1) {
+			if(set_timings(abs_path,t) == -1) {
 				debugprintf("CloseFile: error (%d) setting file timings\n",errno);
 			} else {
 				debugprintf("CloseFile: updated file timings\n");
@@ -778,35 +705,35 @@ extern "C" {
 		} 
 		else 
 		{
-			debugprintf("CloseFile: RPC Failure\n");
+			std::cout << status.error_message() << "\n";
+			debugprintf("CloseFile: RPC Failure %d.\n", status.error_code());
 			debugprintf("CloseFile: Exiting function\n");
 			errno = transform_rpc_err(status.error_code());
 				return -1;
 		}
 	}
 
-	int FileSystemClient::CreateFile(std::string abs_path, std::string root, mode_t mode, dev_t rdev)
+	int FileSystemClient::CreateFile(std::string abs_path, std::string root, mode_t mode, int flags)
 	{
 		debugprintf("CreateFile: Entering function\n");
-		MknodRequest request;
-		MknodResponse reply;
+		CreateRequest request;
+		CreateResponse reply;
 		Status status;
 		uint32_t retryCount = 0;
 		std::string path = get_relative_path(abs_path, root);
 
 		request.set_pathname(path);
 		request.set_mode(mode);
-		request.set_dev(rdev);
+		// request.set_flags(flags);
 
-		// Make RPC
-		// Retry w backoff
+		// Make RPC and retry
 		do 
 		{
 			ClientContext context;
 			reply.Clear();
 			debugprintf("CreateFile: Invoking RPC\n");
 			sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
-			status = stub_->Mknod(&context, request, &reply);
+			status = stub_->Create(&context, request, &reply);
 			retryCount++;
 		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
@@ -814,7 +741,6 @@ extern "C" {
 		if (status.ok()) 
 		{
 			debugprintf("CreateFile: RPC Success\n");
-			debugprintf("CreateFile: Exiting function\n");
 			uint server_errno = reply.fs_errno();
 			if(server_errno) {
 				debugprintf("...but error %d on server\n", server_errno);
@@ -824,7 +750,12 @@ extern "C" {
 			}
 
 			// adding file to local cache
-			mknod(path.c_str(), mode, rdev);
+			// mknod(abs_path.c_str(), mode, rdev);
+			int ret = open(abs_path.c_str(), flags, mode);
+			if(ret != 0) {
+				debugprintf("CreateFile: local file create failure, errno %d\n", errno);
+				return -1;
+			}
 			return 0;
 		} 
 		else 
@@ -875,9 +806,9 @@ extern "C" {
 			debugprintf("DeleteFile: Exiting function\n");
 
 			// remove from local cache
-			if (file_exists(path))
+			if (file_exists(abs_path))
 			{
-				unlink(path.c_str());
+				unlink(abs_path.c_str());
 			}
 
 			return 0;

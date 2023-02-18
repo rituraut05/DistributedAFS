@@ -6,6 +6,8 @@
 #include <memory>
 #include <string>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
 #include <filesystem>
 
 #include <grpc/grpc.h>
@@ -64,8 +66,8 @@ using afs::StoreResponse;
 using afs::TestAuthRequest;
 using afs::TestAuthResponse;
 using afs::Timestamp;
-using afs::MknodRequest;
-using afs::MknodResponse;
+using afs::CreateRequest;
+using afs::CreateResponse;
 using afs::RemoveRequest;
 using afs::RemoveResponse;
 
@@ -98,9 +100,9 @@ class AFSImpl final : public FileSystemService::Service {
 
   path getPath(string relativePath) {
     path normalPath = (root / relativePath).lexically_normal();
-    debugprintf("[getPath]: root = %s\n", root.c_str());
-    debugprintf("[getPath]: relative path = %s\n", relativePath.c_str());
-    debugprintf("[getPath]: Normalised path = %s\n", normalPath.c_str());
+    // debugprintf("[getPath]: root = %s\n", root.c_str());
+    // debugprintf("[getPath]: relative path = %s\n", relativePath.c_str());
+    // debugprintf("[getPath]: Normalised path = %s\n", normalPath.c_str());
     
     // error checking 
     auto [a, b] = std::mismatch(root.begin(), root.end(), normalPath.begin());
@@ -294,14 +296,14 @@ class AFSImpl final : public FileSystemService::Service {
     }
 
     Status GetFileStat(ServerContext* context, const GetFileStatRequest* req, GetFileStatResponse* resp) override {
-      debugprintf("[GetFileStat]: Function entered.\n");
+      // debugprintf("[GetFileStat]: Function entered.\n");
       try {
         path filepath = getPath(req->pathname());
-        debugprintf("[GetFileStat]: filepath = %s\n", filepath.c_str());
+        // debugprintf("[GetFileStat]: filepath = %s\n", filepath.c_str());
 
         auto stat = readStat(filepath);
         resp->mutable_stat()->CopyFrom(stat);
-         debugprintf("[GetFileStat]: Function ended.\n");
+        // debugprintf("[GetFileStat]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
         debugprintf("[GetFileStat]: Protocol Exception: %d %s\n", e.get_code(), e.what());
@@ -362,10 +364,10 @@ class AFSImpl final : public FileSystemService::Service {
     }
 
     Status TestAuth(ServerContext* context, const TestAuthRequest* req, TestAuthResponse* resp) override {
-      debugprintf("[TestAuth]: Function entered.\n");
+      // debugprintf("[TestAuth]: Function entered.\n");
       try {
         path filepath = getPath(req->pathname());
-        debugprintf("[TestAuth]: filepath = %s\n", filepath.c_str());
+        // debugprintf("[TestAuth]: filepath = %s\n", filepath.c_str());
         
         auto ts_server = readModifyTime(filepath);
         auto ts_client = req->time_modified();
@@ -373,7 +375,7 @@ class AFSImpl final : public FileSystemService::Service {
           (ts_server.sec() == ts_client.sec() && ts_server.nsec() > ts_client.nsec());
 
         resp->set_file_changed(file_changed);
-        debugprintf("[TestAuth]: Function ended.\n");
+        // debugprintf("[TestAuth]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
         debugprintf("[TestAuth]: Protocol Exception: %d %s\n", e.get_code(), e.what());
@@ -492,29 +494,31 @@ class AFSImpl final : public FileSystemService::Service {
             return Status(StatusCode::UNKNOWN, e.what());
         }
     }
-    Status Mknod(ServerContext* context, const MknodRequest* request, MknodResponse* reply) override {
-        debugprintf("Mknod: Entering function\n");
+    Status Create(ServerContext* context, const CreateRequest* request, CreateResponse* reply) override {
+        debugprintf("Create: Entering function\n");
 
         try {
             path filepath = getPath(request->pathname());
-            debugprintf("Mknod: filepath = %s\n", filepath.c_str());
-
-            // auto lock = locks.GetWriteLock(filepath.string());
-            int ret = mknod(filepath.c_str(), request->mode(), request->dev());
+            debugprintf("Create: filepath = %s\n", filepath.c_str());
             
-            debugprintf("Mknod: Exiting function on Success path\n");
+            // int ret = open(filepath.c_str(), request->flags(), request->mode());
+            // int ret = creat(filepath.c_str(), request->mode());
+            int ret = mknod(filepath.c_str(), request->mode(), NULL);
+            if(ret != 0) {
+              debugprintf("Create: Error creating file %d\n", errno);
+              reply->set_fs_errno(errno);
+            }
+            debugprintf("Create: Exiting function.\n");
             return Status::OK;
         } catch (const ProtocolException& e) {
-            debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
-            debugprintf("Mknod: Exiting function on ProtocolException path\n");
+            debugprintf("Create: [Protocol Exception: %d] %s\n", e.get_code(), e.what());
             return Status(e.get_code(), e.what());
         } catch(const FileSystemException& e) {
-            debugprintf("[System Exception: %d]\n", e.get_fs_errno());
+            debugprintf("Create: [System Exception: %d]\n", e.get_fs_errno());
             reply -> set_fs_errno(e.get_fs_errno());
             return Status::OK;
         } catch (const std::exception& e) {
-            errprintf("[Unexpected Exception] %s\n", e.what());
-            debugprintf("Mknod: Exiting function on Exception path\n");
+            errprintf("Create: Unexpected Exception] %s\n", e.what());
             return Status(StatusCode::UNKNOWN, e.what());
         }
     }
@@ -555,7 +559,7 @@ class AFSImpl final : public FileSystemService::Service {
 };
 
 void RunServer(path root) {
-  std::string server_address("0.0.0.0:50051");
+  std::string server_address("0.0.0.0:50052");
   AFSImpl service(root);
 
   ServerBuilder builder;

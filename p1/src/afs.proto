@@ -11,7 +11,7 @@ service FileSystemService
     rpc Store (StoreRequest) returns (StoreResponse) {}
     rpc Remove (RemoveRequest) returns (RemoveResponse) {}
     rpc Create (CreateRequest) returns (CreateResponse) {}
-    rpc Mknod (MknodRequest) returns (MknodResponse) {}
+    // rpc Mknod (MknodRequest) returns (MknodResponse) {}
     
     // Metadata operations
     rpc GetFileStat (GetFileStatRequest) returns (GetFileStatResponse) {}
@@ -107,7 +107,7 @@ message CreateRequest
 {
     string pathname = 1;
     uint32 mode = 2;
-    uint32 dev = 3;
+    uint32 flags = 3;
 }
 
 message CreateResponse
@@ -141,7 +141,6 @@ message MknodRequest
     uint32 mode = 2;
     uint32 dev = 3;
 }
-
 message MknodResponse
 {
     uint32 fs_errno = 1;
