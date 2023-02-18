@@ -48,6 +48,8 @@ using afs::FileStat;
 using afs::FileSystemService;
 using afs::GetFileStatRequest;
 using afs::GetFileStatResponse;
+using afs::AccessRequest;
+using afs::AccessResponse;
 using afs::ListDirRequest;
 using afs::ListDirResponse;
 using afs::MakeDirRequest;
@@ -84,7 +86,7 @@ enum fuse_fill_dir_flags {
 
 string get_relative_path(string path, string root) {
 	string path_copy = path;
-	path_copy.erase(0, root.length()+1);
+	path_copy.erase(0, root.length());
 	return path_copy;
 }
 
@@ -132,33 +134,30 @@ vector<string> tokenize_path(string path, char delim, bool is_file) {
 }
 
 int create_path(string relative_path, bool is_file, string root) {
-	debugprintf("create_path: Entering function\n");
-	vector<string> tokens = tokenize_path(relative_path, '/', is_file);
-
-	// Change base path later
+	debugprintf("[create_path]: Function entered.\n");
 	string base_path = root;
+	vector<string> tokens = tokenize_path(relative_path, '/', is_file);
 	for (auto token : tokens)
 	{
 		base_path += token + "/";
-
 		struct stat s;
 		int r = stat(base_path.c_str(), &s);
 		if (r != 0 && errno == 2) 
 		{
-				debugprintf("create_path: stat() ENOENT\n");
+				debugprintf("[create_path]: stat() ENOENT\n");
 				if (mkdir(base_path.c_str(), S_IRWXU) != 0)
 				{
-						debugprintf("create_path: mkdir() failed : %d\n", errno);
+						debugprintf("[create_path]: mkdir() failed : %d\n", errno);
 						return -1;
 				}
 		}
 		else if (r != 0)
 		{
-				debugprintf("create_path: stat() failed : %d\n", errno);
+				debugprintf("[create_path]: stat() failed : %d\n", errno);
 				return -1;
 		}		
 	}
-	debugprintf("create_path: Exiting function\n");
+	debugprintf("[create_path]: Function ended.\n");
 	return 0;
 }
 
@@ -382,6 +381,41 @@ extern "C" {
 			return file;
 		}
 
+		int FileSystemClient::Access(std::string abs_path, int mode, std::string root) {
+			debugprintf("[Access]: Function entered.\n");
+			AccessRequest req;
+			AccessResponse resp;
+			Status status;
+			int retryCount = 0;
+			std::string path = get_relative_path(abs_path, root);
+
+			req.set_pathname(path);
+			req.set_mode(mode);
+
+			do {
+				debugprintf("[Access] Invoking Access RPC.\n");
+				ClientContext context;
+				resp.Clear();
+				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
+				retryCount++;
+				status = stub_->Access(&context, req, &resp);
+			} while(retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+
+			if(status.ok()) {
+				debugprintf("[Access]: Access RPC success.\n");
+				int server_errno = resp.fs_errno();
+				if(server_errno) {
+					debugprintf("[Access]: Server returned error %d on Access call for %s.\n", server_errno, path);
+					errno = server_errno;
+					return -1;
+				}
+				return 0;
+			} else {
+				debugprintf("[Access] Access RPC failed.\n");
+				return -1;
+			}
+		}
+
 		TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root) {
 			debugprintf("[TestAuth]: Function entered.\n");
 			TestAuthRequest req;
@@ -441,7 +475,7 @@ extern "C" {
 			MakeDirRequest request;
 			MakeDirResponse reply;
 			Status status;
-			uint32_t retryCount = 0;
+			int retryCount = 0;
 
 			std::string path = get_relative_path(abs_path, root);
 			request.set_pathname(path);

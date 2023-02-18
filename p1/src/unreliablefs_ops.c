@@ -73,7 +73,7 @@ const char *fuse_op_name[] = {
 
 extern int error_inject(const char* path, fuse_op operation);
 
-void initgRPC(char* server_addr, char* root) {
+void initgRPC(char* server_addr, char* mountpoint) {
     WFileSystemClient c = create_FileSystemClient(server_addr);
 
     printf("--------------- Ping ---------------\n");
@@ -83,7 +83,13 @@ void initgRPC(char* server_addr, char* root) {
 
     if(p_rc == 0) {
         client = c;
-        basedir = root;
+        int mtpt_length = strlen(mountpoint);
+        if(mountpoint[mtpt_length-1] != '/') {
+            printf("-------------%s %c\n", mountpoint, mountpoint[mtpt_length-1]);
+            mountpoint[mtpt_length] = '/';
+            mountpoint[mtpt_length + 1] = '\0';
+        };
+        basedir = mountpoint;
     }
 }
 
@@ -690,7 +696,7 @@ int unreliable_access(const char *path, int mode)
         return ret;
     }
 
-    ret = access(path, mode); 
+    ret = access_FileSystemClient(client, path, mode, basedir);
     if (ret == -1) {
         return -errno;
     }

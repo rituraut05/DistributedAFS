@@ -49,6 +49,8 @@ using afs::FileStat;
 using afs::FileSystemService;
 using afs::GetFileStatRequest;
 using afs::GetFileStatResponse;
+using afs::AccessRequest;
+using afs::AccessResponse;
 using afs::ListDirRequest;
 using afs::ListDirResponse;
 using afs::MakeDirRequest;
@@ -314,6 +316,29 @@ class AFSImpl final : public FileSystemService::Service {
       }
     }
 
+    Status Access(ServerContext* context, const AccessRequest* req, AccessResponse* resp) override {
+      debugprintf("[Access]: Function entered.\n");
+      try {
+        path filepath = getPath(req->pathname());
+        int mode = req->mode();
+        debugprintf("[Access]: filepath = %s\n", filepath.c_str());
+
+        int ret = access(filepath.c_str(), mode);
+        if(ret != 0) {
+          resp->set_fs_errno(errno);
+        }
+        debugprintf("[Access]: Function ended.\n");
+        return Status::OK;
+      } catch (const FileSystemException& e) {
+        debugprintf("[Access]: System Exception: %d\n", e.get_fs_errno());
+        resp->set_fs_errno(e.get_fs_errno());
+        return Status::OK;
+      } catch (const std::exception& e) {
+        debugprintf("[GetFileStat]: Unexpected Exception %s\n", e.what());
+        return Status(StatusCode::UNKNOWN, e.what());
+      }
+    }
+
     Status Fetch(ServerContext* context, const FetchRequest* req, FetchResponse* resp) override {
       debugprintf("[Fetch] Function entered.\n");
       path filepath = getPath(req->pathname());
@@ -344,7 +369,8 @@ class AFSImpl final : public FileSystemService::Service {
         
         auto ts_server = readModifyTime(filepath);
         auto ts_client = req->time_modified();
-        bool file_changed = (ts_server.sec() != ts_client.sec()) || (ts_server.nsec() != ts_client.nsec());
+        bool file_changed = (ts_server.sec() > ts_client.sec()) || 
+          (ts_server.sec() == ts_client.sec() && ts_server.nsec() > ts_client.nsec());
 
         resp->set_file_changed(file_changed);
         debugprintf("[TestAuth]: Function ended.\n");
