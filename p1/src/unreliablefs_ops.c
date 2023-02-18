@@ -428,7 +428,9 @@ int unreliable_flush(const char *path, struct fuse_file_info *fi)
     }
 
     printf("flushing!");
-    ret = close(dup(fi->fh));
+    // ret = close(dup(fi->fh));
+    ret = close_FileSystemClient(client, dup(fi->fh), path, basedir);
+
     if (ret == -1) {
         return -errno;
     }
@@ -446,7 +448,8 @@ int unreliable_release(const char *path, struct fuse_file_info *fi)
     }
 
     printf("releasing!");
-    ret = close(fi->fh);
+    // ret = close(fi->fh);
+    ret = close_FileSystemClient(client, fi->fh, path, basedir);
     if (ret == -1) {
         return -errno;
     }

@@ -344,7 +344,8 @@ class AFSImpl final : public FileSystemService::Service {
         
         auto ts_server = readModifyTime(filepath);
         auto ts_client = req->time_modified();
-        bool file_changed = (ts_server.sec() != ts_client.sec()) || (ts_server.nsec() != ts_client.nsec());
+        bool file_changed = (ts_server.sec() > ts_client.sec()) || 
+          (ts_server.sec() == ts_client.sec() && ts_server.nsec() > ts_client.nsec());
 
         resp->set_file_changed(file_changed);
         debugprintf("[TestAuth]: Function ended.\n");

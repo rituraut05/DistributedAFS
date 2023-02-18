@@ -689,30 +689,15 @@ extern "C" {
 		Status status;
 		uint32_t retryCount = 0;
 		std::string path = get_relative_path(abs_path, root);
-	
-		// Check for init closes (fd = -1) and skip to RPC call
-		if (fd != -1)
-			if (close(fd))
-			{
-				debugprintf("CloseFile: close() failed\n");
-				return -1;
-			}
-
-		if (SINGLE_LOG)
-		{
-			if (!checkModified_single_log(fd, path)) return 0;
-		}
-		else
-		{
-			if(!isFileModifiedv2(path)) return 0;
-		}
-			
+		
 
 		// Set request
 		// const string cache_path = get_cache_path(path);
 		
 		request.set_pathname(path);
-		request.set_file_contents(readFileIntoString(path));
+
+		string content = readFileIntoString(abs_path);
+		request.set_file_contents(content);
 
 		// Make RPC
 		// Retry with backoff
