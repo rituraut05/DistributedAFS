@@ -16,6 +16,7 @@ service FileSystemService
     // Metadata operations
     rpc GetFileStat (GetFileStatRequest) returns (GetFileStatResponse) {}
     rpc TestAuth (TestAuthRequest) returns (TestAuthResponse) {}
+    rpc Access (AccessRequest) returns (AccessResponse) {}
     
     // Directory operations
     rpc MakeDir (MakeDirRequest) returns (MakeDirResponse) {}
@@ -54,6 +55,16 @@ message GetFileStatResponse
 {
     FileStat stat = 1;
     int32 fs_errno = 2;
+}
+
+message AccessRequest
+{
+    string pathname = 1;
+    int32 mode = 2;
+}
+message AccessResponse
+{
+    int32 fs_errno = 1;
 }
 
 // Based on chrono::timespec

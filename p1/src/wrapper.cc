@@ -21,6 +21,10 @@ extern "C" {
 		return ((FileSystemClient*)v)->OpenFile(path, root);
 	}
 
+	int access_FileSystemClient(WFileSystemClient v, char* path, int mode, char* root) {
+		return ((FileSystemClient*)v)->Access(path, mode, root);
+	}
+
 	int close_FileSystemClient(WFileSystemClient v, int fd, char* path, char* root) {
 		return ((FileSystemClient*)v)->CloseFile(fd, path, root);
 	}
