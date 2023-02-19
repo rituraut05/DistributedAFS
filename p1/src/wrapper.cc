@@ -21,12 +21,20 @@ extern "C" {
 		return ((FileSystemClient*)v)->OpenFile(path, root);
 	}
 
+	int openUsingStream_FileSystemClient(WFileSystemClient v, char* path, char* root) {
+		return((FileSystemClient*)v)->OpenFileUsingStream(path, root);
+	}
+
 	int access_FileSystemClient(WFileSystemClient v, char* path, int mode, char* root) {
 		return ((FileSystemClient*)v)->Access(path, mode, root);
 	}
 
 	int close_FileSystemClient(WFileSystemClient v, int fd, char* path, char* root) {
 		return ((FileSystemClient*)v)->CloseFile(fd, path, root);
+	}
+
+	int closeUsingStream_FileSystemClient(WFileSystemClient v, int fd, char* path, char* root) {
+		return ((FileSystemClient*)v)->CloseFileUsingStream(fd, path, root);
 	}
 	
 	int makeDir_FileSystemClient(WFileSystemClient v, char* abs_path, char* root, mode_t mode) {

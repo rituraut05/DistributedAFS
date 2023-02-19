@@ -13,6 +13,8 @@ int getFileStat_FileSystemClient(WFileSystemClient, char*, struct stat *, char*)
 int open_FileSystemClient(WFileSystemClient, char*, char*);
 int access_FileSystemClient(WFileSystemClient, char*, int, char*);
 int close_FileSystemClient(WFileSystemClient v, int fd, char* path, char* root);
+int closeUsingStream_FileSystemClient(WFileSystemClient, int, char*, char*);
+int openUsingStream_FileSystemClient(WFileSystemClient, char*, char*);
 
 int makeDir_FileSystemClient(WFileSystemClient, char*, char*, mode_t);
 int removeDir_FileSystemClient(WFileSystemClient, char*, char*);

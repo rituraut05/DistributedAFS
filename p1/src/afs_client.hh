@@ -26,11 +26,14 @@ class FileSystemClient {
     int CreateFile(std::string abs_path, std::string root, mode_t mode, int flags);
     int DeleteFile(std::string abs_path, std::string root);
     int Access(std::string abs_path, int mode, std::string root);
-    TestAuthReturn TestAuth(std::string path, std::string root);
-    
     int MakeDir(std::string abs_path, std::string root, mode_t mode);
     int RemoveDir(std::string abs_path, std::string root);
     int ReadDir(std::string abs_path, std::string root, void *buf, fuse_fill_dir_t filler);
+
+    int CloseFileUsingStream(int fd, std::string abs_path, std::string root);
+    int OpenFileUsingStream(std::string abs_path, std::string root);
+
+    TestAuthReturn TestAuth(std::string path, std::string root);
 
   private:
     std::unique_ptr<FileSystemService::Stub> stub_;

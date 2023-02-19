@@ -74,7 +74,7 @@ using afs::RemoveResponse;
 #define RETRY_TIME_START      1                                     // in seconds
 #define RETRY_TIME_MULTIPLIER 2                                     // for rpc 
 #define MAX_RETRIES           5                                     // rpc retry
-#define SINGLE_LOG            1                                     // Turns on single log functionality
+#define CHUNK_SIZE            4096																	// for streaming 
 
 enum fuse_readdir_flags {
          FUSE_READDIR_PLUS = (1 << 0),
@@ -166,6 +166,16 @@ int create_path(string relative_path, bool is_file, string root) {
 	return 0;
 }
 
+string readFileIntoString(string path) {
+	ifstream input_file(path);
+	if (!input_file.is_open()) 
+	{
+		debugprintf("readFileIntoString(): failed\n");
+		return string();
+	}
+	return string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
+}
+
 int transform_rpc_err(grpc::StatusCode code) {
 switch(code) {
 	case StatusCode::OK:
@@ -188,13 +198,13 @@ switch(code) {
 }
 
 extern "C" {
-    FileSystemClient::FileSystemClient(std::shared_ptr<Channel> channel)
-      : stub_(FileSystemService::NewStub(channel)) {
+	FileSystemClient::FileSystemClient(std::shared_ptr<Channel> channel)
+		: stub_(FileSystemService::NewStub(channel)) {
 
-        std::cout << "-------------- Helloo --------------" << std::endl;
-      }
+			std::cout << "-------------- Helloo --------------" << std::endl;
+	}
 
-    int FileSystemClient::Ping(int * round_trip_time) {
+  int FileSystemClient::Ping(int * round_trip_time) {
 			auto start = std::chrono::steady_clock::now();
 			
 			PingMessage request;
@@ -233,7 +243,7 @@ extern "C" {
 			}
     }
 
-		int FileSystemClient::GetFileStat(std::string abs_path, struct stat *buf, std::string root) {
+	int FileSystemClient::GetFileStat(std::string abs_path, struct stat *buf, std::string root) {
 			debugprintf("[GetFileStat]: Function entered.\n");
 			GetFileStatRequest req;
 			GetFileStatResponse resp;
@@ -286,7 +296,7 @@ extern "C" {
 			}
 		}
 
-		int FileSystemClient::OpenFile(std::string abs_path, std::string root) {
+	int FileSystemClient::OpenFile(std::string abs_path, std::string root) {
 			debugprintf("[OpenFile]: Function entered.\n");
 			int file;
 			int retryCount = 0;
@@ -386,42 +396,7 @@ extern "C" {
 			return file;
 		}
 
-		int FileSystemClient::Access(std::string abs_path, int mode, std::string root) {
-			debugprintf("[Access]: Function entered.\n");
-			AccessRequest req;
-			AccessResponse resp;
-			Status status;
-			int retryCount = 0;
-			std::string path = get_relative_path(abs_path, root);
-
-			req.set_pathname(path);
-			req.set_mode(mode);
-
-			do {
-				debugprintf("[Access] Invoking Access RPC.\n");
-				ClientContext context;
-				resp.Clear();
-				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-				retryCount++;
-				status = stub_->Access(&context, req, &resp);
-			} while(retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
-
-			if(status.ok()) {
-				debugprintf("[Access]: Access RPC success.\n");
-				int server_errno = resp.fs_errno();
-				if(server_errno) {
-					debugprintf("[Access]: Server returned error %d on Access call for %s.\n", server_errno, path);
-					errno = server_errno;
-					return -1;
-				}
-				return 0;
-			} else {
-				debugprintf("[Access] Access RPC failed.\n");
-				return -1;
-			}
-		}
-
-		TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root) {
+	TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root) {
 			debugprintf("[TestAuth]: Function entered.\n");
 			TestAuthRequest req;
 			TestAuthResponse resp;
@@ -472,10 +447,44 @@ extern "C" {
 
 			debugprintf("[TestAuth]: Function ended successfully.\n");
 			return TestAuthReturn(status, resp);
-		}	
+		}
 
+	int FileSystemClient::Access(std::string abs_path, int mode, std::string root) {
+			debugprintf("[Access]: Function entered.\n");
+			AccessRequest req;
+			AccessResponse resp;
+			Status status;
+			int retryCount = 0;
+			std::string path = get_relative_path(abs_path, root);
+
+			req.set_pathname(path);
+			req.set_mode(mode);
+
+			do {
+				debugprintf("[Access] Invoking Access RPC.\n");
+				ClientContext context;
+				resp.Clear();
+				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
+				retryCount++;
+				status = stub_->Access(&context, req, &resp);
+			} while(retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+
+			if(status.ok()) {
+				debugprintf("[Access]: Access RPC success.\n");
+				int server_errno = resp.fs_errno();
+				if(server_errno) {
+					debugprintf("[Access]: Server returned error %d on Access call for %s.\n", server_errno, path);
+					errno = server_errno;
+					return -1;
+				}
+				return 0;
+			} else {
+				debugprintf("[Access] Access RPC failed.\n");
+				return -1;
+			}
+		}
 		
-    int FileSystemClient::MakeDir(std::string abs_path, std::string root, mode_t mode) {
+  int FileSystemClient::MakeDir(std::string abs_path, std::string root, mode_t mode) {
 			printf("MakeDir: Entering function\n");
 			MakeDirRequest request;
 			MakeDirResponse reply;
@@ -523,128 +532,117 @@ extern "C" {
 			}
     }
 
-    int FileSystemClient::RemoveDir(std::string abs_path, std::string root) {
+  int FileSystemClient::RemoveDir(std::string abs_path, std::string root) {
         printf("RemoveDir: Entering function\n");
-	RemoveDirRequest request;
-	RemoveDirResponse reply;
-	Status status;
-	uint32_t retryCount = 0;
+			RemoveDirRequest request;
+			RemoveDirResponse reply;
+			Status status;
+			uint32_t retryCount = 0;
 
-	std::string path = get_relative_path(abs_path, root);
-	request.set_pathname(path);
+			std::string path = get_relative_path(abs_path, root);
+			request.set_pathname(path);
 
-	// Make RPC
-	// Retry w backoff
-        
-	do
-	{
-	    ClientContext context;
-    	    reply.Clear();
-	    printf("RemoveDir: Invoking RPC\n");
-	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
-	    status = stub_->RemoveDir(&context, request, &reply);
-	    retryCount++;
-	} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+			// Make RPC
+			// Retry w backoff
+						
+			do
+			{
+					ClientContext context;
+							reply.Clear();
+					printf("RemoveDir: Invoking RPC\n");
+					sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+					status = stub_->RemoveDir(&context, request, &reply);
+					retryCount++;
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-        // Checking RPC Status
+						// Checking RPC Status
 
-	if (status.ok())
-	{
-	    printf("RemoveDir: RPC Success\n");
-	    printf("RemoveDir: Exiting function\n");
+			if (status.ok())
+			{
+					printf("RemoveDir: RPC Success\n");
+					printf("RemoveDir: Exiting function\n");
 
-            uint server_errno = reply.fs_errno();
-	    if(server_errno) {
-		printf("...but error %d on server\n", server_errno);
-	    	printf("RemoveDir: Exiting function\n");
-		errno = server_errno;
-		return -1;
-	    }
+								uint server_errno = reply.fs_errno();
+					if(server_errno) {
+				printf("...but error %d on server\n", server_errno);
+						printf("RemoveDir: Exiting function\n");
+				errno = server_errno;
+				return -1;
+					}
 
-            // removing directory from cache
-	    // rmdir(get_cache_path(path).c_str());
-	    rmdir(abs_path.c_str());
-	    return 0;
-	}
-	else
-	{
-	    printf("RemoveDir: RPC Failure\n");
-	    printf("RemoveDir: Exiting function\n");
-	    errno = transform_rpc_err(status.error_code());
-	    return -1;
-	}
-    }
+								// removing directory from cache
+					// rmdir(get_cache_path(path).c_str());
+					rmdir(abs_path.c_str());
+					return 0;
+			}
+			else
+			{
+					printf("RemoveDir: RPC Failure\n");
+					printf("RemoveDir: Exiting function\n");
+					errno = transform_rpc_err(status.error_code());
+					return -1;
+			}
+  }
 
-    int FileSystemClient::ReadDir(std::string abs_path, std::string root, void *buf, fuse_fill_dir_t filler) {
+  int FileSystemClient::ReadDir(std::string abs_path, std::string root, void *buf, fuse_fill_dir_t filler) {
         printf("ListDir: Entering function\n");
- 	ListDirRequest request;
- 	ListDirResponse reply;
- 	Status status;
- 	uint32_t retryCount = 0;
+			ListDirRequest request;
+			ListDirResponse reply;
+			Status status;
+			uint32_t retryCount = 0;
 
-	std::string path = get_relative_path(abs_path, root);
- 	request.set_pathname(path);
+			std::string path = get_relative_path(abs_path, root);
+			request.set_pathname(path);
 
- 	// Make RPC
-	// Retry w backoff
- 
-	do
-	{
-	    ClientContext context;
-            reply.Clear();
-    	    printf("ListDir: Invoking RPC\n");
-    	    sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
-    	    status = stub_->ReadDir(&context, request, &reply);
-    	    retryCount++;
-    	} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+			// Make RPC
+			// Retry w backoff
+		
+			do
+			{
+					ClientContext context;
+								reply.Clear();
+							printf("ListDir: Invoking RPC\n");
+							sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+							status = stub_->ReadDir(&context, request, &reply);
+							retryCount++;
+					} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-    
-	// std::cout << "count = " << reply.entries().size() << std::endl;
+				
+			// std::cout << "count = " << reply.entries().size() << std::endl;
 
-	// Checking RPC Status
-	if (status.ok()) {
-            printf("ListDir: RPC Success\n");       
-    	    uint server_errno = reply.fs_errno();
-   	    if(server_errno) {
-   	        printf("...but error %d on server\n", server_errno);
-               	printf("ListDir: Exiting function\n");          
-     		errno = server_errno;
-               	return -1;
-	    }
-        
-	}
-       	else
-       	{
-       	    // std::cout << status.error_code() << ": " << status.error_message()
-       	    //           << std::endl;
-	    //PrintErrorMessage(status.error_code(), status.error_message(), "ListDir");
-	    printf("ListDir: RPC Failure\n");
-      	    errno = transform_rpc_err(status.error_code());
-     	    return -1;
-     	}
+			// Checking RPC Status
+			if (status.ok()) {
+								printf("ListDir: RPC Success\n");       
+							uint server_errno = reply.fs_errno();
+						if(server_errno) {
+								printf("...but error %d on server\n", server_errno);
+										printf("ListDir: Exiting function\n");          
+						errno = server_errno;
+										return -1;
+					}
+						
+			}
+						else
+						{
+								// std::cout << status.error_code() << ": " << status.error_message()
+								//           << std::endl;
+					//PrintErrorMessage(status.error_code(), status.error_message(), "ListDir");
+					printf("ListDir: RPC Failure\n");
+								errno = transform_rpc_err(status.error_code());
+							return -1;
+					}
 
-     	printf("ListDir: Exiting function\n");
-     	for (auto itr = reply.entries().begin(); itr != reply.entries().end(); itr++) {
-            struct stat st;
-       	    memset(&st, 0, sizeof(st));
-       	    st.st_ino = itr->size();
-       	    st.st_mode = itr->mode();
-       	    if (filler(buf, itr->file_name().c_str() , &st, 0))
-                break;
-   	}
-   	return 0;
-    }
-
-	string readFileIntoString(string path) 
-	{
-		ifstream input_file(path);
-		if (!input_file.is_open()) 
-		{
-			debugprintf("readFileIntoString(): failed\n");
-			return string();
-		}
-		return string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
-	}
+					printf("ListDir: Exiting function\n");
+					for (auto itr = reply.entries().begin(); itr != reply.entries().end(); itr++) {
+								struct stat st;
+								memset(&st, 0, sizeof(st));
+								st.st_ino = itr->size();
+								st.st_mode = itr->mode();
+								if (filler(buf, itr->file_name().c_str() , &st, 0))
+										break;
+				}
+				return 0;
+  }
 
 	int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
 	{
@@ -822,6 +820,199 @@ extern "C" {
 		}                
 	}
 
+	int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::string root) {
+		debugprintf("[CloseFileUsingStream]: Function entered.\n");
+		if (close(fd) == -1) {
+				debugprintf("[CloseFileUsingStream]: close() failed.\n");
+				return -1;
+		}
+		StoreRequest request;
+		StoreResponse reply;
+		Status status;
+		int retryCount = 0;
+		std::string path = get_relative_path(abs_path, root);
+
+		do {
+			debugprintf("[CloseFileUsingStream]: Invoking Close RPC.\n");
+			ClientContext context;
+      reply.Clear();
+			sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
+
+			std::unique_ptr<ClientWriter<StoreRequest>> writer(
+        stub_->StoreUsingStream(&context, &reply));
+			
+			request.set_pathname(path);
+			std::ifstream fin(abs_path.c_str(), std::ios::binary);
+			fin.clear();
+			fin.seekg(0, ios::beg);
+
+			struct stat st;
+			stat(abs_path.c_str(), &st);
+			int fileSize = st.st_size;
+			int totalChunks = 0;
+			totalChunks = fileSize / CHUNK_SIZE;
+			bool aligned = true;
+			int lastChunkSize = CHUNK_SIZE;
+			if (fileSize % CHUNK_SIZE) {
+					totalChunks++;
+					aligned = false;
+					lastChunkSize = fileSize % CHUNK_SIZE;
+			}
+			debugprintf("[CloseFileUsingStream]: fileSize = %d\n", fileSize);
+			debugprintf("[CloseFileUsingStream]: totalChunks = %d\n", totalChunks);
+			debugprintf("[CloseFileUsingStream]: lastChunkSize = %d\n", lastChunkSize);
+
+			unsigned long bytes = 0;
+      unsigned long bytes_read = 0;
+			for (size_t chunk = 0; chunk < totalChunks; chunk++) {
+				size_t currentChunkSize = (chunk == totalChunks - 1 && !aligned) ? 
+					lastChunkSize : CHUNK_SIZE;
+
+				char * buffer = new char[currentChunkSize];	
+				bytes += currentChunkSize;
+	
+				if (fin.read(buffer, currentChunkSize)) 
+				{
+					auto bcnt = fin.gcount();
+					bytes_read += bcnt;
+					request.set_file_contents(buffer, bcnt);
+					debugprintf("[CloseFileUsingStream]: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
+
+					if (!writer->Write(request)) 
+					{
+						debugprintf("[CloseFileUsingStream]: Stream broke\n");
+						break; 
+					}
+				} else {
+					debugprintf("[CloseFileUsingStream]: Failed to read chunk [iter %ld, total %ld B]\n", chunk, bytes);
+				}
+			}
+			fin.close();
+			writer->WritesDone();
+			status = writer->Finish();
+
+			retryCount++;
+		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+
+		if (status.ok()) {
+			debugprintf("[CloseFileUsingStream]: RPC Success\n");
+			uint server_errno = reply.fs_errno();
+			if(server_errno) {
+				debugprintf("[CloseFileUsingStream]: error %d on server\n", server_errno);
+				debugprintf("[CloseFileUsingStream]: Exiting function\n"); 
+				errno = server_errno;
+				return -1;
+			}
+			
+			auto timing = reply.time_modify();
+			
+			struct timespec t;
+			t.tv_sec = timing.sec();
+			t.tv_nsec = timing.nsec();
+			
+			if(set_timings(abs_path, t) == -1) {
+					debugprintf("[CloseFileUsingStream]: error (%d) setting file timings\n", errno);
+			} else {
+					debugprintf("[CloseFileUsingStream]: updated file timings\n");
+			}
+			
+			debugprintf("[CloseFileUsingStream]: Exiting function\n");
+			return 0;
+		} else {
+			debugprintf("[CloseFileUsingStream]: RPC Failure\n");
+			debugprintf("[CloseFileUsingStream]: Exiting function\n");
+			std::cout << "[CloseFileUsingStream]: Error msg: " << status.error_message() << "\n";
+			errno = transform_rpc_err(status.error_code());
+			return -1;
+		}
+	}
+
+  int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root) {
+		debugprintf("OpenFileUsingStream: Inside function\n");
+		int file;
+		FetchRequest request;
+		FetchResponse reply;
+		Status status;
+		ClientContext context;
+		int retryCount = 0;
+		std::string path = get_relative_path(abs_path, root);
+
+		auto test_auth_result = TestAuth(abs_path, root);
+		if (!test_auth_result.status.ok() || test_auth_result.response.file_changed()) {  
+			if(test_auth_result.status.ok()) {
+				debugprintf("OpenFileUsingStream: TestAuth reports changed\n");
+			} else {
+				debugprintf("OpenFileUsingStream: TestAuth RPC failed\n");
+			}
+
+			if (create_path(path, true, root) != 0) {
+				debugprintf("[OpenFileUsingStream]: create_path() call failed.\n");
+				return -1;
+			}
+			
+			do {
+				debugprintf("OpenFileUsingStream: Invoking RPC\n");
+				request.set_pathname(path);
+				
+				sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+				
+				std::unique_ptr<ClientReader<FetchResponse>> reader(
+						stub_->FetchUsingStream(&context, request));
+				
+				std::ofstream file;
+				file.open(abs_path, std::ios::binary);
+				file.clear();
+				file.seekp(0, ios::beg);
+
+				while (reader->Read(&reply))
+				{
+					file << reply.file_contents();
+				}
+
+				Status status = reader->Finish();
+				file.close();
+				retryCount++;
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+
+			if (status.ok()) {
+				debugprintf("OpenFileUsingStream: RPC Success\n");
+				uint server_errno = reply.fs_errno();
+				if(server_errno) {
+					debugprintf("OpenFileUsingStream: error %d on server\n", server_errno);
+					errno = server_errno;
+					return -1;
+				}
+				
+				auto timing = reply.time_modified();
+				
+				struct timespec t;
+				t.tv_sec = timing.sec();
+				t.tv_nsec = timing.nsec();
+				
+				if(set_timings(abs_path,t) == -1) {
+					debugprintf("OpenFileUsingStream: error (%d) setting file timings\n",errno);
+				} else {
+					debugprintf("OpenFileUsingStream: updated file timings\n");
+				}
+					
+			} else {
+				debugprintf("OpenFileUsingStream: RPC Failure\n");
+				errno = transform_rpc_err(status.error_code());
+				return -1;
+			}
+		} 
+		else {
+			debugprintf("OpenFileUsingStream: TestAuth reported no change.\n");
+		}
+		
+		file = open(abs_path.c_str(), O_RDWR | O_CREAT, 0666);
+		if (file == -1) {
+			debugprintf("OpenFileUsingStream: open() failed\n");
+			return -1;
+		}
+		debugprintf("OpenFileUsingStream: Exiting function\n");
+		return file;
+	}
 };
 
 

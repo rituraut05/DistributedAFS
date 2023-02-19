@@ -28,6 +28,7 @@
     }
 #define errprintf(...) \
     { printf(__VA_ARGS__); }
+#define CHUNK_SIZE 4096																	// for streaming 
 
 namespace fs = std::filesystem;
 using fs::path;
@@ -211,7 +212,7 @@ class AFSImpl final : public FileSystemService::Service {
         // Check that this is a valid destination
         uint pre_err = check_valid_write_destination(filepath);
         if(pre_err != 0) {
-            throw FileSystemException(pre_err);
+          throw FileSystemException(pre_err);
         }
 
         path temppath = get_tempfile_path(filepath);
@@ -555,6 +556,130 @@ class AFSImpl final : public FileSystemService::Service {
             debugprintf("Remove: Exiting function on Exception path\n");
             return Status(StatusCode::UNKNOWN, e.what());
         }
+    }
+
+    Status StoreUsingStream(ServerContext* context, ServerReader<StoreRequest> * reader, StoreResponse* reply) override {
+      debugprintf("StoreUsingStream: Entering function\n");
+      StoreRequest request;
+      std::ofstream file;
+      path filepath;
+      int i = 0;
+      try {
+        // Read first request in stream
+        if(!reader -> Read(&request)) {
+          throw ProtocolException("Empty stream", StatusCode::CANCELLED);
+        }
+        
+        // Note: this assumes all requests in the stream are to the same pathname
+        filepath = getPath(request.pathname());
+        debugprintf("StoreUsingStream: filepath = %s\n", filepath.c_str());
+        
+        // Check that this is a valid destination
+        uint pre_err = check_valid_write_destination(filepath);
+        if(pre_err != 0) {
+          throw FileSystemException(pre_err);
+        }
+
+        path temppath = get_tempfile_path(filepath);
+        
+        file.open(temppath, std::ios::binary);
+
+        unsigned long iter = 0;
+        unsigned long bytes = 0;
+        
+        string chunk;
+        
+        do {
+          chunk = request.file_contents();
+          file << chunk;
+          iter++;
+          bytes += chunk.length();
+          debugprintf("StoreUsingStream: Read message [iter %ld, total %ld B]\n",iter,bytes);
+        } while (reader->Read(&request));
+
+        file.close();
+
+        // Overwrite dest file with temp file
+        if (rename(temppath.c_str(), filepath.c_str()) == -1) {
+          debugprintf("StoreUsingStream: Exiting function on error committng temp file\n");
+          throw ProtocolException("Error committing temp file", StatusCode::UNKNOWN);
+        }
+
+        auto time = readModifyTime(filepath);
+        reply->mutable_time_modify()->CopyFrom(time);
+        debugprintf("StoreUsingStream: Exiting function\n");
+
+        return Status::OK; 
+      } catch (const ProtocolException& e) {
+        debugprintf("StoreUsingStream: [Protocol Exception: %d] %s\n", e.get_code(), e.what());
+        return Status(e.get_code(), e.what());
+      } catch(const FileSystemException& e) {
+        debugprintf("StoreUsingStream: [System Exception: %d]\n", e.get_fs_errno());
+        reply -> set_fs_errno(e.get_fs_errno());
+        return Status::OK;
+      } catch (const std::exception& e) {
+        debugprintf("StoreUsingStream: [Unexpected Exception] %s\n", e.what());
+        return Status(StatusCode::UNKNOWN, e.what());
+      }
+    }
+
+    Status FetchUsingStream(ServerContext* context, const FetchRequest* request, ServerWriter<FetchResponse>* writer) override {
+      try {
+        path filepath = getPath(request->pathname());
+        debugprintf("FetchUsingStream: filepath = %s\n", filepath.c_str());
+        FetchResponse reply;
+        
+        // Set response
+        reply.mutable_time_modified()->CopyFrom(readModifyTime(filepath));
+        
+        // Get total chunks
+        std::ifstream fin(filepath.c_str(), std::ios::binary);
+
+        struct stat st;
+        stat(filepath.c_str(), &st);
+        int fileSize = st.st_size;
+        int totalChunks = 0;
+        totalChunks = fileSize / CHUNK_SIZE;
+        bool aligned = true;
+        int lastChunkSize = CHUNK_SIZE;
+        if (fileSize % CHUNK_SIZE) {
+          totalChunks++;
+          aligned = false;
+          lastChunkSize = fileSize % CHUNK_SIZE;
+        }
+            
+        debugprintf("FetchUsingStream: fileSize = %d\n", fileSize);
+        debugprintf("FetchUsingStream: totalChunks = %d\n", totalChunks);
+        debugprintf("FetchUsingStream: lastChunkSize = %d\n", lastChunkSize);
+            
+        unsigned long bytes=0;
+        unsigned long bytes_read = 0;
+        for (size_t chunk = 0; chunk < totalChunks; chunk++) {
+          size_t currentChunkSize = (chunk == totalChunks - 1 && !aligned) ? 
+                                        lastChunkSize : CHUNK_SIZE;
+              
+          char * buffer = new char [currentChunkSize];
+          if (fin.read(buffer, currentChunkSize)) {
+            auto bcnt = fin.gcount();
+            bytes += currentChunkSize;
+            bytes_read += bcnt;
+            
+            reply.set_file_contents(buffer, bcnt);
+            
+            debugprintf("FetchUsingStream: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
+            writer->Write(reply);
+          }
+        }
+
+        fin.close();
+        return Status::OK;
+      } catch (const ProtocolException& e) {
+        debugprintf("FetchUsingStream [Protocol Exception: %d] %s\n", e.get_code(), e.what());
+        return Status(e.get_code(), e.what());
+      } catch (const std::exception& e) {
+        debugprintf("FetchUsingStream [Unexpected Exception] %s\n", e.what());
+        return Status(StatusCode::UNKNOWN, e.what());
+      }
     }
 };
 
