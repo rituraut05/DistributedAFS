@@ -750,11 +750,8 @@ extern "C" {
 			// adding file to local cache
 			// mknod(abs_path.c_str(), mode, rdev);
 			int ret = open(abs_path.c_str(), flags, mode);
-			if(ret != 0) {
-				debugprintf("CreateFile: local file create failure, errno %d\n", errno);
-				return -1;
-			}
-			return 0;
+			debugprintf("CreateFile: %s, %d, %d\n", abs_path.c_str(), flags, mode);
+			return ret;
 		} 
 		else 
 		{
