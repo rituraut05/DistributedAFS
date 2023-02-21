@@ -29,6 +29,7 @@ class FileSystemClient {
     int MakeDir(std::string abs_path, std::string root, mode_t mode);
     int RemoveDir(std::string abs_path, std::string root);
     int ReadDir(std::string abs_path, std::string root, void *buf, fuse_fill_dir_t filler);
+    int Rename(std:: string abs_path, std::string new_name, std::string root);
 
     int CloseFileUsingStream(int fd, std::string abs_path, std::string root);
     int OpenFileUsingStream(std::string abs_path, std::string root);

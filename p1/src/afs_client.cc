@@ -66,8 +66,8 @@ using afs::Timestamp;
 using std::vector;
 using afs::CreateRequest;
 using afs::CreateResponse;
-using afs::RemoveRequest;
-using afs::RemoveResponse;
+using afs::RenameRequest;
+using afs::RenameResponse;
 
 #define DEBUG                 1                                     // for debugging
 #define debugprintf(...)        if (DEBUG) { printf(__VA_ARGS__); }   // for debugging
@@ -1010,6 +1010,58 @@ extern "C" {
 		debugprintf("OpenFileUsingStream: Exiting function\n");
 		return file;
 	}
+
+  int FileSystemClient::Rename(std::string abs_path, std::string new_name, std::string root)
+        {
+                debugprintf("Rename: Entered function\n");
+                RenameRequest request;
+                RenameResponse reply;
+                Status status;
+                uint32_t retryCount = 0;
+                std::string path = get_relative_path(abs_path, root);
+
+                request.set_pathname(path);
+		request.set_componentname(new_name);
+
+                // Make RPC
+                // Retry with backoff
+                do
+                {
+                        ClientContext context;
+                        reply.Clear();
+                        debugprintf("Rename: Invoking RPC\n");
+                        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
+                        status = stub_->Rename(&context, request, &reply);
+                        retryCount++;
+                } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE );
+
+
+                // Checking RPC Status
+                if (status.ok())
+                {
+                        debugprintf("Rename: RPC success\n");
+                        uint server_errno = reply.fs_errno();
+                        if(server_errno) {
+                                debugprintf("...but error %d on server\n", server_errno);
+                                debugprintf("Rename: Exiting function\n");
+                                errno = server_errno;
+                                        return -1;
+                        }
+
+                        debugprintf("Rename: Exiting function\n");
+
+                        
+                        rename(abs_path.c_str(), new_name.c_str());
+                        return 0;
+                }
+                else
+                {
+                        debugprintf("Rename: RPC failure\n");
+                        debugprintf("Rename: Exiting function\n");
+                        errno = transform_rpc_err(status.error_code());
+                                return -1;
+                }
+        }
 };
 
 

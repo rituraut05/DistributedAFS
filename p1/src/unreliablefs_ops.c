@@ -247,7 +247,8 @@ int unreliable_rename(const char *oldpath, const char *newpath)
         return ret;
     }
 
-    ret = rename(oldpath, newpath);
+    // ret = rename(oldpath, newpath);
+    ret = rename_FileSystemClient(client, oldpath, newpath, basedir);
     if (ret == -1) {
         return -errno;
     }

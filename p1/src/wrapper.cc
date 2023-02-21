@@ -57,4 +57,7 @@ extern "C" {
 		return ((FileSystemClient*)v)->DeleteFile(abs_path, root);
 	}
 	
+	int rename_FileSystemClient(WFileSystemClient v, char* abs_path, char* new_name, char* root) {
+                return ((FileSystemClient*)v)->Rename(abs_path, new_name, root);
+        }
 }

@@ -19,6 +19,7 @@ int openUsingStream_FileSystemClient(WFileSystemClient, char*, char*);
 int makeDir_FileSystemClient(WFileSystemClient, char*, char*, mode_t);
 int removeDir_FileSystemClient(WFileSystemClient, char*, char*);
 int readDir_FileSystemClient(WFileSystemClient, char*, char*, void *, int*);
+int rename_FileSystemClient(WFileSystemClient, char*, char*, char*);
 
 int createFile_FileSystemClient(WFileSystemClient v, char* , char* , mode_t, int);
 int deleteFile_FileSystemClient(WFileSystemClient v, char* abs_path, char* root);

@@ -12,7 +12,8 @@ service FileSystemService
     rpc Remove (RemoveRequest) returns (RemoveResponse) {}
     rpc Create (CreateRequest) returns (CreateResponse) {}
     // rpc Mknod (MknodRequest) returns (MknodResponse) {}
-    
+    rpc Rename (RenameRequest) returns (RenameResponse) {}
+
     // Metadata operations
     rpc GetFileStat (GetFileStatRequest) returns (GetFileStatResponse) {}
     rpc TestAuth (TestAuthRequest) returns (TestAuthResponse) {}
@@ -176,4 +177,14 @@ message ListDirResponse
 {
     uint32 fs_errno = 1;
     repeated DirectoryEntry entries = 2;
+}
+
+message RenameRequest
+{
+    string pathname = 1;      // old file path, e.g. `/home/guest/data/first.txt`
+    string componentname = 2; // new file name, e.g. `second.txt` (within same directory)
+}
+message RenameResponse
+{
+    uint32 fs_errno = 1;
 }

@@ -71,6 +71,8 @@ using afs::CreateRequest;
 using afs::CreateResponse;
 using afs::RemoveRequest;
 using afs::RemoveResponse;
+using afs::RenameRequest;
+using afs::RenameResponse;
 
 static const string TEMP_FILE_EXT = ".afs_tmp";
 
@@ -262,7 +264,7 @@ class AFSImpl final : public FileSystemService::Service {
   }
 
   void make_dir(path filepath, int mode) {
-("make_dir: Entering function\n");
+	debugprintf("make_dir: Entering function\n");
         if (mkdir(filepath.c_str(), mode) == -1) {
             debugprintf("make_dir: Exiting function\n");
             throw FileSystemException(errno);
@@ -286,6 +288,37 @@ class AFSImpl final : public FileSystemService::Service {
             msg->set_size(is_regular_file(entry.status()) ? file_size(entry) : 0);
         }
         debugprintf("list_dir: Exiting function\n");
+    }
+
+    void move_file(path srcpath, path dstpath) {
+        debugprintf("move_file: Entering function\n");
+
+        if (fs::exists(dstpath)) {
+            debugprintf("move_file: Exiting function\n");
+            throw FileSystemException(EEXIST);
+            // throw ProtocolException("Attempting to rename item to existing item", StatusCode::FAILED_PRECONDITION);
+        }
+
+        if (rename(srcpath.c_str(), dstpath.c_str()) == -1) {
+            debugprintf("move_file: Exiting function\n");
+            throw FileSystemException(errno);
+            // switch (errno) {
+            //     /* These cases shouldn't happen due to our exists() check
+            //     case EISDIR:
+            //         throw ProtocolException("Attempting to rename file to existing directory", StatusCode::FAILED_PRECONDITION);
+            //     case ENOTDIR:
+            //         throw ProtocolException("Attempting to rename directory to existing file", StatusCode::FAILED_PRECONDITION);
+            //     */
+            //     case ENOENT:
+            //         throw ProtocolException("File not found", StatusCode::NOT_FOUND);
+            //     case EINVAL:
+            //         throw ProtocolException("Attempting to rename directory to child of itself", StatusCode::INVALID_ARGUMENT);
+            //     default:
+            //         throw ProtocolException("Error in call to rename", StatusCode::UNKNOWN);
+            // }
+        }
+
+        debugprintf("move_file: Exiting function\n");
     }
 
  public:
@@ -680,6 +713,38 @@ class AFSImpl final : public FileSystemService::Service {
         debugprintf("FetchUsingStream [Unexpected Exception] %s\n", e.what());
         return Status(StatusCode::UNKNOWN, e.what());
       }
+    }
+
+    Status Rename(ServerContext* context, const RenameRequest* request, RenameResponse* reply) override {
+        debugprintf("Rename: Entering function\n");
+        try {
+            path srcpath = getPath(request->pathname());
+            path dstpath = getPath(srcpath.parent_path() / request->componentname());
+
+            // TODO: check that dst is in same dir as src
+            debugprintf("Rename: srcpath = %s, dstpath = %s\n", srcpath.c_str(), dstpath.c_str());
+
+            // Lock both paths
+            // auto lock1 = locks.GetWriteLock(srcpath.string());
+            // auto lock2 = locks.GetWriteLock(dstpath.string());
+
+            move_file(srcpath, dstpath);
+
+            debugprintf("Rename: Exiting function on Success path\n");
+            return Status::OK;
+        } catch (const ProtocolException& e) {
+            debugprintf("[Protocol Exception: %d] %s\n", e.get_code(), e.what());
+            debugprintf("Rename: Exiting function on ProtocolException path\n");
+            return Status(e.get_code(), e.what());
+        } catch(const FileSystemException& e) {
+            debugprintf("[System Exception: %d]\n", e.get_fs_errno());
+            reply -> set_fs_errno(e.get_fs_errno());
+            return Status::OK;
+        } catch (const std::exception& e) {
+            errprintf("[Unexpected Exception] %s\n", e.what());
+            debugprintf("Rename: Exiting function on Exception path\n");
+            return Status(StatusCode::UNKNOWN, e.what());
+        }
     }
 };
 
