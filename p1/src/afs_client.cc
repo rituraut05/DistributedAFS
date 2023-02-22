@@ -1018,10 +1018,14 @@ extern "C" {
                 RenameResponse reply;
                 Status status;
                 uint32_t retryCount = 0;
-                std::string path = get_relative_path(abs_path, root);
 
-                request.set_pathname(path);
-		request.set_componentname(new_name);
+                std::string old_path = get_relative_path(abs_path, root);
+		std::string new_path = get_relative_path(new_name, root);
+
+
+		// debugprintf("new_name: %s\n", new_name.c_str());
+                request.set_pathname(old_path);
+		request.set_componentname(new_path);
 
                 // Make RPC
                 // Retry with backoff

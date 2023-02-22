@@ -719,7 +719,7 @@ class AFSImpl final : public FileSystemService::Service {
         debugprintf("Rename: Entering function\n");
         try {
             path srcpath = getPath(request->pathname());
-            path dstpath = getPath(srcpath.parent_path() / request->componentname());
+            path dstpath = getPath(request->componentname());
 
             // TODO: check that dst is in same dir as src
             debugprintf("Rename: srcpath = %s, dstpath = %s\n", srcpath.c_str(), dstpath.c_str());
