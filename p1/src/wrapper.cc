@@ -21,8 +21,8 @@ extern "C" {
 		return ((FileSystemClient*)v)->OpenFile(path, root);
 	}
 
-	int openUsingStream_FileSystemClient(WFileSystemClient v, char* path, char* root) {
-		return((FileSystemClient*)v)->OpenFileUsingStream(path, root);
+	int openUsingStream_FileSystemClient(WFileSystemClient v, char* path, char* root, int flags) {
+		return((FileSystemClient*)v)->OpenFileUsingStream(path, root, flags);
 	}
 
 	int access_FileSystemClient(WFileSystemClient v, char* path, int mode, char* root) {

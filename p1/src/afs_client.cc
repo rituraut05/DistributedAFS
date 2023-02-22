@@ -251,48 +251,54 @@ extern "C" {
 			int retryCount = 0;
 			std::string path = get_relative_path(abs_path, root);
 
-			// Make RPC & retry
-			req.set_pathname(path);
-			do {
-				debugprintf("[GetFileStat]: Invoking GetFileStat RPC.\n");
-				ClientContext context;
-				resp.Clear();
-				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-				retryCount++;
-				status = stub_->GetFileStat(&context, req, &resp);
-			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+			auto test_auth_result = TestAuth(abs_path, root);
+			if(!test_auth_result.status.ok() || test_auth_result.response.file_changed()) {
+				// Make RPC & retry
+				req.set_pathname(path);
+				do {
+					debugprintf("[GetFileStat]: Invoking GetFileStat RPC.\n");
+					ClientContext context;
+					resp.Clear();
+					sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
+					retryCount++;
+					status = stub_->GetFileStat(&context, req, &resp);
+				} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-			// Checking RPC Status
-			if (status.ok()) 
-			{
-				debugprintf("[GetFileStat]: GetFileStat RPC success.\n");
-				int server_errno = resp.fs_errno();
-				if(server_errno) {
-					debugprintf("[GetFileStat]: Error %d on server.\n", server_errno);
-					debugprintf("[GetFileStat]: Function ended due to server failure.\n"); 
-					errno = server_errno;
+				// Checking RPC Status
+				if (status.ok()) 
+				{
+					debugprintf("[GetFileStat]: GetFileStat RPC success.\n");
+					int server_errno = resp.fs_errno();
+					if(server_errno) {
+						debugprintf("[GetFileStat]: Error %d on server.\n", server_errno);
+						debugprintf("[GetFileStat]: Function ended due to server failure.\n"); 
+						errno = server_errno;
+						return -1;
+					}
+					
+					buf->st_ino = resp.stat().ino();
+					buf->st_mode = resp.stat().mode();
+					buf->st_nlink = resp.stat().nlink();
+					buf->st_uid = resp.stat().uid();
+					buf->st_gid = resp.stat().gid();
+					buf->st_size = resp.stat().size();
+					buf->st_blksize = resp.stat().blksize();
+					buf->st_blocks = resp.stat().blocks();
+					buf->st_atime = resp.stat().atime();
+					buf->st_mtime = resp.stat().mtime();
+					buf->st_ctime = resp.stat().ctime();
+					debugprintf("[GetFileStat]: Function ended; ino = %d\n", buf->st_ino);
+					return 0;
+				} 
+				else {
+					debugprintf("[GetFileStat]: GetFileStat RPC failed.\n");
+					debugprintf("[GetFileStat]: Function ended due to RPC failure.\n");
+					errno = transform_rpc_err(status.error_code());
 					return -1;
 				}
-				
-				buf->st_ino = resp.stat().ino();
-				buf->st_mode = resp.stat().mode();
-				buf->st_nlink = resp.stat().nlink();
-				buf->st_uid = resp.stat().uid();
-				buf->st_gid = resp.stat().gid();
-				buf->st_size = resp.stat().size();
-				buf->st_blksize = resp.stat().blksize();
-				buf->st_blocks = resp.stat().blocks();
-				buf->st_atime = resp.stat().atime();
-				buf->st_mtime = resp.stat().mtime();
-				buf->st_ctime = resp.stat().ctime();
-				debugprintf("[GetFileStat]: Function ended; ino = %d\n", buf->st_ino);
-				return 0;
-			} 
-			else {
-				debugprintf("[GetFileStat]: GetFileStat RPC failed.\n");
-				debugprintf("[GetFileStat]: Function ended due to RPC failure.\n");
-				errno = transform_rpc_err(status.error_code());
-				return -1;
+			} else {
+				debugprintf("[GetFileStat]: No change in file, getting stat from client local.\n");
+				return lstat(abs_path.c_str(), buf);
 			}
 		}
 
@@ -502,6 +508,7 @@ extern "C" {
 				ClientContext context;
 				reply.Clear();
 				printf("MakeDir: Invoking RPC\n");
+				printf("MakdeDir: Path %s\n", path.c_str());
 				sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 				status = stub_->MakeDir(&context, request, &reply);
 				retryCount++;
@@ -722,7 +729,7 @@ extern "C" {
 
 		request.set_pathname(path);
 		request.set_mode(mode);
-		// request.set_flags(flags);
+		request.set_flags(flags);
 
 		// Make RPC and retry
 		do 
@@ -818,7 +825,7 @@ extern "C" {
 	}
 
 	int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::string root) {
-		debugprintf("[CloseFileUsingStream]: Function entered.\n");
+		debugprintf("[CloseFileUsingStream]: Function entered. %s\n", abs_path);
 		if (close(fd) == -1) {
 				debugprintf("[CloseFileUsingStream]: close() failed.\n");
 				return -1;
@@ -829,102 +836,109 @@ extern "C" {
 		int retryCount = 0;
 		std::string path = get_relative_path(abs_path, root);
 
-		do {
-			debugprintf("[CloseFileUsingStream]: Invoking Close RPC.\n");
-			ClientContext context;
-      reply.Clear();
-			sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
+		auto test_auth_result = TestAuth(abs_path, root);
+		if(!test_auth_result.status.ok() || test_auth_result.response.client_changed_file())
+		{
+			do {
+				debugprintf("[CloseFileUsingStream]: Invoking Close RPC.\n");
+				ClientContext context;
+				reply.Clear();
+				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
 
-			std::unique_ptr<ClientWriter<StoreRequest>> writer(
-        stub_->StoreUsingStream(&context, &reply));
-			
-			request.set_pathname(path);
-			std::ifstream fin(abs_path.c_str(), std::ios::binary);
-			fin.clear();
-			fin.seekg(0, ios::beg);
+				std::unique_ptr<ClientWriter<StoreRequest>> writer(
+					stub_->StoreUsingStream(&context, &reply));
+				
+				request.set_pathname(path);
+				std::ifstream fin(abs_path.c_str(), std::ios::binary);
+				fin.clear();
+				fin.seekg(0, ios::beg);
 
-			struct stat st;
-			stat(abs_path.c_str(), &st);
-			int fileSize = st.st_size;
-			int totalChunks = 0;
-			totalChunks = fileSize / CHUNK_SIZE;
-			bool aligned = true;
-			int lastChunkSize = CHUNK_SIZE;
-			if (fileSize % CHUNK_SIZE) {
-					totalChunks++;
-					aligned = false;
-					lastChunkSize = fileSize % CHUNK_SIZE;
-			}
-			debugprintf("[CloseFileUsingStream]: fileSize = %d\n", fileSize);
-			debugprintf("[CloseFileUsingStream]: totalChunks = %d\n", totalChunks);
-			debugprintf("[CloseFileUsingStream]: lastChunkSize = %d\n", lastChunkSize);
-
-			unsigned long bytes = 0;
-      unsigned long bytes_read = 0;
-			for (size_t chunk = 0; chunk < totalChunks; chunk++) {
-				size_t currentChunkSize = (chunk == totalChunks - 1 && !aligned) ? 
-					lastChunkSize : CHUNK_SIZE;
-
-				char * buffer = new char[currentChunkSize];	
-				bytes += currentChunkSize;
-	
-				if (fin.read(buffer, currentChunkSize)) 
-				{
-					auto bcnt = fin.gcount();
-					bytes_read += bcnt;
-					request.set_file_contents(buffer, bcnt);
-					debugprintf("[CloseFileUsingStream]: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
-
-					if (!writer->Write(request)) 
-					{
-						debugprintf("[CloseFileUsingStream]: Stream broke\n");
-						break; 
-					}
-				} else {
-					debugprintf("[CloseFileUsingStream]: Failed to read chunk [iter %ld, total %ld B]\n", chunk, bytes);
+				struct stat st;
+				stat(abs_path.c_str(), &st);
+				int fileSize = st.st_size;
+				int totalChunks = 0;
+				totalChunks = fileSize / CHUNK_SIZE;
+				bool aligned = true;
+				int lastChunkSize = CHUNK_SIZE;
+				if (fileSize % CHUNK_SIZE) {
+						totalChunks++;
+						aligned = false;
+						lastChunkSize = fileSize % CHUNK_SIZE;
 				}
-			}
-			fin.close();
-			writer->WritesDone();
-			status = writer->Finish();
+				debugprintf("[CloseFileUsingStream]: fileSize = %d\n", fileSize);
+				debugprintf("[CloseFileUsingStream]: totalChunks = %d\n", totalChunks);
+				debugprintf("[CloseFileUsingStream]: lastChunkSize = %d\n", lastChunkSize);
 
-			retryCount++;
-		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+				unsigned long bytes = 0;
+				unsigned long bytes_read = 0;
+				for (size_t chunk = 0; chunk < totalChunks; chunk++) {
+					size_t currentChunkSize = (chunk == totalChunks - 1 && !aligned) ? 
+						lastChunkSize : CHUNK_SIZE;
 
-		if (status.ok()) {
-			debugprintf("[CloseFileUsingStream]: RPC Success\n");
-			uint server_errno = reply.fs_errno();
-			if(server_errno) {
-				debugprintf("[CloseFileUsingStream]: error %d on server\n", server_errno);
-				debugprintf("[CloseFileUsingStream]: Exiting function\n"); 
-				errno = server_errno;
+					char * buffer = new char[currentChunkSize];	
+					bytes += currentChunkSize;
+		
+					if (fin.read(buffer, currentChunkSize)) 
+					{
+						auto bcnt = fin.gcount();
+						bytes_read += bcnt;
+						request.set_file_contents(buffer, bcnt);
+						// debugprintf("[CloseFileUsingStream]: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
+
+						if (!writer->Write(request)) 
+						{
+							debugprintf("[CloseFileUsingStream]: Stream broke\n");
+							break; 
+						}
+					} else {
+						debugprintf("[CloseFileUsingStream]: Failed to read chunk [iter %ld, total %ld B]\n", chunk, bytes);
+					}
+				}
+				fin.close();
+				writer->WritesDone();
+				status = writer->Finish();
+
+				retryCount++;
+			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+
+			if (status.ok()) {
+				debugprintf("[CloseFileUsingStream]: RPC Success\n");
+				uint server_errno = reply.fs_errno();
+				if(server_errno) {
+					debugprintf("[CloseFileUsingStream]: error %d on server\n", server_errno);
+					debugprintf("[CloseFileUsingStream]: Exiting function\n"); 
+					errno = server_errno;
+					return -1;
+				}
+				
+				auto timing = reply.time_modify();
+				
+				struct timespec t;
+				t.tv_sec = timing.sec();
+				t.tv_nsec = timing.nsec();
+				
+				if(set_timings(abs_path, t) == -1) {
+						debugprintf("[CloseFileUsingStream]: error (%d) setting file timings\n", errno);
+				} else {
+						debugprintf("[CloseFileUsingStream]: updated file timings\n");
+				}
+				
+				debugprintf("[CloseFileUsingStream]: Exiting function\n");
+				return 0;
+			} else {
+				debugprintf("[CloseFileUsingStream]: RPC Failure\n");
+				debugprintf("[CloseFileUsingStream]: Exiting function\n");
+				std::cout << "[CloseFileUsingStream]: Error msg: " << status.error_message() << "\n";
+				errno = transform_rpc_err(status.error_code());
 				return -1;
 			}
-			
-			auto timing = reply.time_modify();
-			
-			struct timespec t;
-			t.tv_sec = timing.sec();
-			t.tv_nsec = timing.nsec();
-			
-			if(set_timings(abs_path, t) == -1) {
-					debugprintf("[CloseFileUsingStream]: error (%d) setting file timings\n", errno);
-			} else {
-					debugprintf("[CloseFileUsingStream]: updated file timings\n");
-			}
-			
-			debugprintf("[CloseFileUsingStream]: Exiting function\n");
-			return 0;
 		} else {
-			debugprintf("[CloseFileUsingStream]: RPC Failure\n");
-			debugprintf("[CloseFileUsingStream]: Exiting function\n");
-			std::cout << "[CloseFileUsingStream]: Error msg: " << status.error_message() << "\n";
-			errno = transform_rpc_err(status.error_code());
-			return -1;
+			debugprintf("[CloseFileUsingStream]: File not changed by client, skipping sending to server.\n");
+			return 0;
 		}
 	}
 
-  int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root) {
+  int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root, int flags) {
 		debugprintf("OpenFileUsingStream: Inside function\n");
 		int file;
 		FetchRequest request;
@@ -1002,7 +1016,7 @@ extern "C" {
 			debugprintf("OpenFileUsingStream: TestAuth reported no change.\n");
 		}
 		
-		file = open(abs_path.c_str(), O_RDWR | O_CREAT, 0666);
+		file = open(abs_path.c_str(), flags);
 		if (file == -1) {
 			debugprintf("OpenFileUsingStream: open() failed\n");
 			return -1;
@@ -1044,18 +1058,19 @@ extern "C" {
                 if (status.ok())
                 {
                         debugprintf("Rename: RPC success\n");
-                        uint server_errno = reply.fs_errno();
-                        if(server_errno) {
-                                debugprintf("...but error %d on server\n", server_errno);
-                                debugprintf("Rename: Exiting function\n");
-                                errno = server_errno;
-                                        return -1;
-                        }
+                        // uint server_errno = reply.fs_errno();
+                        // if(server_errno) {
+                        //         debugprintf("...but error %d on server\n", server_errno);
+                        //         debugprintf("Rename: Exiting function\n");
+                        //         errno = server_errno;
+                        //                 return -1;
+                        // }
 
-                        debugprintf("Rename: Exiting function\n");
+                        // debugprintf("Rename: Exiting function\n");
 
+						debugprintf("Running rename\n");
                         
-                        rename(abs_path.c_str(), new_name.c_str());
+                        debugprintf("%d\n", rename(abs_path.c_str(), new_name.c_str()));
                         return 0;
                 }
                 else

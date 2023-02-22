@@ -293,29 +293,10 @@ class AFSImpl final : public FileSystemService::Service {
     void move_file(path srcpath, path dstpath) {
         debugprintf("move_file: Entering function\n");
 
-        if (fs::exists(dstpath)) {
-            debugprintf("move_file: Exiting function\n");
-            throw FileSystemException(EEXIST);
-            // throw ProtocolException("Attempting to rename item to existing item", StatusCode::FAILED_PRECONDITION);
-        }
 
         if (rename(srcpath.c_str(), dstpath.c_str()) == -1) {
-            debugprintf("move_file: Exiting function\n");
+            debugprintf("move_file: Exiting function with error %d\n", errno);
             throw FileSystemException(errno);
-            // switch (errno) {
-            //     /* These cases shouldn't happen due to our exists() check
-            //     case EISDIR:
-            //         throw ProtocolException("Attempting to rename file to existing directory", StatusCode::FAILED_PRECONDITION);
-            //     case ENOTDIR:
-            //         throw ProtocolException("Attempting to rename directory to existing file", StatusCode::FAILED_PRECONDITION);
-            //     */
-            //     case ENOENT:
-            //         throw ProtocolException("File not found", StatusCode::NOT_FOUND);
-            //     case EINVAL:
-            //         throw ProtocolException("Attempting to rename directory to child of itself", StatusCode::INVALID_ARGUMENT);
-            //     default:
-            //         throw ProtocolException("Error in call to rename", StatusCode::UNKNOWN);
-            // }
         }
 
         debugprintf("move_file: Exiting function\n");
@@ -407,8 +388,11 @@ class AFSImpl final : public FileSystemService::Service {
         auto ts_client = req->time_modified();
         bool file_changed = (ts_server.sec() > ts_client.sec()) || 
           (ts_server.sec() == ts_client.sec() && ts_server.nsec() > ts_client.nsec());
+        bool client_changed_file = (ts_server.sec() < ts_client.sec()) || 
+          (ts_server.sec() == ts_client.sec() && ts_server.nsec() < ts_client.nsec());
 
         resp->set_file_changed(file_changed);
+        resp->set_client_changed_file(client_changed_file);
         // debugprintf("[TestAuth]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
@@ -429,7 +413,7 @@ class AFSImpl final : public FileSystemService::Service {
 
       try {
         path filepath = getPath(request->pathname());
-        printf("TestAuth: filepath = %s\n", filepath.c_str());
+        printf("MakeDir: filepath = %s\n", filepath.c_str());
         make_dir(filepath, request->mode());
         printf("MakeDir: Exiting function on Success path\n");
         return Status::OK;
@@ -535,13 +519,7 @@ class AFSImpl final : public FileSystemService::Service {
             path filepath = getPath(request->pathname());
             debugprintf("Create: filepath = %s\n", filepath.c_str());
             
-            // int ret = open(filepath.c_str(), request->flags(), request->mode());
-            // int ret = creat(filepath.c_str(), request->mode());
-            int ret = mknod(filepath.c_str(), request->mode(), NULL);
-            if(ret != 0) {
-              debugprintf("Create: Error creating file %d\n", errno);
-              reply->set_fs_errno(errno);
-            }
+            int ret = open(filepath.c_str(), request->flags(), request->mode());
             debugprintf("Create: Exiting function.\n");
             return Status::OK;
         } catch (const ProtocolException& e) {
@@ -627,7 +605,7 @@ class AFSImpl final : public FileSystemService::Service {
           file << chunk;
           iter++;
           bytes += chunk.length();
-          debugprintf("StoreUsingStream: Read message [iter %ld, total %ld B]\n",iter,bytes);
+          // debugprintf("StoreUsingStream: Read message [iter %ld, total %ld B]\n",iter,bytes);
         } while (reader->Read(&request));
 
         file.close();
@@ -699,7 +677,7 @@ class AFSImpl final : public FileSystemService::Service {
             
             reply.set_file_contents(buffer, bcnt);
             
-            debugprintf("FetchUsingStream: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
+            // debugprintf("FetchUsingStream: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
             writer->Write(reply);
           }
         }
@@ -721,12 +699,7 @@ class AFSImpl final : public FileSystemService::Service {
             path srcpath = getPath(request->pathname());
             path dstpath = getPath(request->componentname());
 
-            // TODO: check that dst is in same dir as src
             debugprintf("Rename: srcpath = %s, dstpath = %s\n", srcpath.c_str(), dstpath.c_str());
-
-            // Lock both paths
-            // auto lock1 = locks.GetWriteLock(srcpath.string());
-            // auto lock2 = locks.GetWriteLock(dstpath.string());
 
             move_file(srcpath, dstpath);
 

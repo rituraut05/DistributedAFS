@@ -32,7 +32,7 @@ class FileSystemClient {
     int Rename(std:: string abs_path, std::string new_name, std::string root);
 
     int CloseFileUsingStream(int fd, std::string abs_path, std::string root);
-    int OpenFileUsingStream(std::string abs_path, std::string root);
+    int OpenFileUsingStream(std::string abs_path, std::string root, int flags);
 
     TestAuthReturn TestAuth(std::string path, std::string root);
 
