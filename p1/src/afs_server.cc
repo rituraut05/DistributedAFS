@@ -576,10 +576,11 @@ class AFSImpl final : public FileSystemService::Service {
       path filepath;
       int i = 0;
       try {
+        reader -> Read(&request);
         // Read first request in stream
-        if(!reader -> Read(&request)) {
-          throw ProtocolException("Empty stream", StatusCode::CANCELLED);
-        }
+        // if(!reader -> Read(&request)) {
+        //   throw ProtocolException("Empty stream", StatusCode::CANCELLED);
+        // }
         
         // Note: this assumes all requests in the stream are to the same pathname
         filepath = getPath(request.pathname());

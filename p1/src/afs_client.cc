@@ -844,11 +844,10 @@ extern "C" {
 				ClientContext context;
 				reply.Clear();
 				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-
+				request.set_pathname(path);
 				std::unique_ptr<ClientWriter<StoreRequest>> writer(
 					stub_->StoreUsingStream(&context, &reply));
-				
-				request.set_pathname(path);
+
 				std::ifstream fin(abs_path.c_str(), std::ios::binary);
 				fin.clear();
 				fin.seekg(0, ios::beg);
