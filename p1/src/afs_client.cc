@@ -813,6 +813,10 @@ extern "C" {
 			{
 				unlink(abs_path.c_str());
 			}
+			if(open_map.find(abs_path) != open_map.end())
+			{
+				open_map.erase(abs_path);
+			}
 
 			return 0;
 		} 
@@ -840,6 +844,7 @@ extern "C" {
 		std::string path = get_relative_path(abs_path, root);
 
 		GetModifyTime(abs_path, &file_modified_time);
+		// std::cout << abs_path << " m:" << file_modified_time.tv_sec << " o:" << file_opened_time.tv_sec << "\n";
 		if(open_map.find(abs_path) == open_map.end() || 
 			file_modified_time.tv_sec > file_opened_time.tv_sec ||
 			(file_modified_time.tv_sec == file_opened_time.tv_sec && file_modified_time.tv_nsec > file_opened_time.tv_nsec)
@@ -929,16 +934,28 @@ extern "C" {
 				}
 				
 				debugprintf("[CloseFileUsingStream]: Exiting function\n");
+				if(open_map.find(abs_path) != open_map.end())
+				{
+					open_map.erase(abs_path);
+				}
 				return 0;
 			} else {
 				debugprintf("[CloseFileUsingStream]: RPC Failure\n");
 				debugprintf("[CloseFileUsingStream]: Exiting function\n");
 				std::cout << "[CloseFileUsingStream]: Error msg: " << status.error_message() << "\n";
 				errno = transform_rpc_err(status.error_code());
+				if(open_map.find(abs_path) != open_map.end())
+				{
+					open_map.erase(abs_path);
+				}
 				return -1;
 			}
 		} else {
 			debugprintf("[CloseFileUsingStream]: File not changed by client, skipping sending to server.\n");
+			if(open_map.find(abs_path) != open_map.end())
+			{
+				open_map.erase(abs_path);
+			}
 			return 0;
 		}
 	}

@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // initgRPC("c220g2-010808.wisc.cloudlab.us:50051", conf.basedir);
+    // initgRPC("c220g5-110914.wisc.cloudlab.us:50057", conf.basedir);
     initgRPC("localhost:50053", conf.basedir);
 
     fprintf(stdout, "starting FUSE filesystem unreliablefs\n");
