@@ -5,6 +5,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 #include <grpcpp/grpcpp.h>
 #include <string>
 #include <chrono>
@@ -20,7 +21,6 @@
 #include "afs.grpc.pb.h"
 #include "afs_client.hh"
 //#include <unreliablefs_ops.h>
-string cache_root; // Why is this required?
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -112,9 +112,9 @@ int set_file_open_time(int fd, timespec t) {
 	return futimens(fd,p);
 }
 
-int set_timings(string cache_path, timespec t) {
+int set_timings(string path, timespec t) {
 	struct timespec p[2] = {t,t};
-	return utimensat(AT_FDCWD,cache_path.c_str(),p,0);
+	return utimensat(AT_FDCWD, path.c_str(), p, 0);
 }
 
 vector<string> tokenize_path(string path, char delim, bool is_file) {
@@ -200,7 +200,7 @@ switch(code) {
 extern "C" {
 	FileSystemClient::FileSystemClient(std::shared_ptr<Channel> channel)
 		: stub_(FileSystemService::NewStub(channel)) {
-
+			open_map.clear();
 			std::cout << "-------------- Helloo --------------" << std::endl;
 	}
 
@@ -754,10 +754,11 @@ extern "C" {
 					return -1;
 			}
 
-			// adding file to local cache
-			// mknod(abs_path.c_str(), mode, rdev);
 			int ret = open(abs_path.c_str(), flags, mode);
 			debugprintf("CreateFile: %s, %d, %d\n", abs_path.c_str(), flags, mode);
+			struct timespec curr_time;
+			timespec_get(&curr_time, TIME_UTC);
+			open_map[abs_path] = curr_time;
 			return ret;
 		} 
 		else 
@@ -825,7 +826,7 @@ extern "C" {
 	}
 
 	int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::string root) {
-		debugprintf("[CloseFileUsingStream]: Function entered. %s\n", abs_path);
+		debugprintf("[CloseFileUsingStream]: Function entered. %s\n", abs_path.c_str());
 		if (close(fd) == -1) {
 				debugprintf("[CloseFileUsingStream]: close() failed.\n");
 				return -1;
@@ -834,10 +835,15 @@ extern "C" {
 		StoreResponse reply;
 		Status status;
 		int retryCount = 0;
+		timespec file_modified_time;
+		timespec file_opened_time = open_map[abs_path];
 		std::string path = get_relative_path(abs_path, root);
 
-		auto test_auth_result = TestAuth(abs_path, root);
-		if(!test_auth_result.status.ok() || test_auth_result.response.client_changed_file())
+		GetModifyTime(abs_path, &file_modified_time);
+		if(open_map.find(abs_path) == open_map.end() || 
+			file_modified_time.tv_sec > file_opened_time.tv_sec ||
+			(file_modified_time.tv_sec == file_opened_time.tv_sec && file_modified_time.tv_nsec > file_opened_time.tv_nsec)
+			)
 		{
 			do {
 				debugprintf("[CloseFileUsingStream]: Invoking Close RPC.\n");
@@ -858,7 +864,7 @@ extern "C" {
 				int totalChunks = 0;
 				totalChunks = fileSize / CHUNK_SIZE;
 				bool aligned = true;
-				int lastChunkSize = CHUNK_SIZE;
+				int lastChunkSize = fileSize == 0 ? 0 : CHUNK_SIZE;
 				if (fileSize % CHUNK_SIZE) {
 						totalChunks++;
 						aligned = false;
@@ -938,7 +944,7 @@ extern "C" {
 	}
 
   int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root, int flags) {
-		debugprintf("OpenFileUsingStream: Inside function\n");
+		debugprintf("OpenFileUsingStream: Inside function, path = %s\n", abs_path.c_str());
 		int file;
 		FetchRequest request;
 		FetchResponse reply;
@@ -1020,6 +1026,9 @@ extern "C" {
 			debugprintf("OpenFileUsingStream: open() failed\n");
 			return -1;
 		}
+		struct timespec curr_time;
+		timespec_get(&curr_time, TIME_UTC);
+		open_map[abs_path] = curr_time;
 		debugprintf("OpenFileUsingStream: Exiting function\n");
 		return file;
 	}
@@ -1036,12 +1045,10 @@ extern "C" {
 		std::string new_path = get_relative_path(new_name, root);
 
 
-		// debugprintf("new_name: %s\n", new_name.c_str());
                 request.set_pathname(old_path);
-		request.set_componentname(new_path);
+								request.set_componentname(new_path);
 
                 // Make RPC
-                // Retry with backoff
                 do
                 {
                         ClientContext context;

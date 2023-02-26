@@ -49,7 +49,6 @@ message TestAuthRequest
 message TestAuthResponse
 {
     bool file_changed = 1;
-    bool client_changed_file = 2;
 }
 
 message GetFileStatRequest

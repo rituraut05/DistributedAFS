@@ -38,4 +38,5 @@ class FileSystemClient {
 
   private:
     std::unique_ptr<FileSystemService::Stub> stub_;
+    unordered_map<std::string, struct timespec> open_map;
 };

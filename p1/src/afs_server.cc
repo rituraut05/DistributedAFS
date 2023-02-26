@@ -388,11 +388,8 @@ class AFSImpl final : public FileSystemService::Service {
         auto ts_client = req->time_modified();
         bool file_changed = (ts_server.sec() > ts_client.sec()) || 
           (ts_server.sec() == ts_client.sec() && ts_server.nsec() > ts_client.nsec());
-        bool client_changed_file = (ts_server.sec() < ts_client.sec()) || 
-          (ts_server.sec() == ts_client.sec() && ts_server.nsec() < ts_client.nsec());
 
         resp->set_file_changed(file_changed);
-        resp->set_client_changed_file(client_changed_file);
         // debugprintf("[TestAuth]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
@@ -723,7 +720,7 @@ class AFSImpl final : public FileSystemService::Service {
 };
 
 void RunServer(path root) {
-  std::string server_address("0.0.0.0:50052");
+  std::string server_address("0.0.0.0:50053");
   AFSImpl service(root);
 
   ServerBuilder builder;
