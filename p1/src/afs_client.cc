@@ -1033,8 +1033,10 @@ extern "C" {
 				errno = transform_rpc_err(status.error_code());
 				return -1;
 			}
-		} 
-		else {
+		} else if(!test_auth_result.status.ok() || test_auth_result.response.file_group_locked()) {
+			debugprintf("OpenFileUsingStream: TestAuth reported file locked. Retry in some time!\n");
+			return -1;
+		} else {
 			debugprintf("OpenFileUsingStream: TestAuth reported no change.\n");
 		}
 		
