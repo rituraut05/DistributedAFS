@@ -9,6 +9,10 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <filesystem>
+#include <shared_mutex>
+#include <vector>
+#include <algorithm>
+#include <cstddef>  
 
 #include <grpc/grpc.h>
 #include <grpcpp/security/server_credentials.h>
@@ -75,6 +79,8 @@ using afs::RenameRequest;
 using afs::RenameResponse;
 
 static const string TEMP_FILE_EXT = ".afs_tmp";
+// const std::vector<string> atomicFilesGroup = {"/acc1", "/acc2"};
+const std::vector<string> atomicFilesGroup = {};
 
 class ProtocolException : public std::runtime_error {
    StatusCode code;
@@ -100,6 +106,26 @@ class FileSystemException : public std::runtime_error {
 
 class AFSImpl final : public FileSystemService::Service {
   path root;
+  int groupLocked = 0;
+  std::shared_mutex mutex;
+
+  // Sets groupLocked value to v
+  void setFileGroupLocked(int v) {
+    mutex.lock();
+    groupLocked = v;
+    mutex.unlock();
+  }
+
+  bool checkFileInGroup(path filepath) {
+    std::string fp_string = filepath.u8string();
+    std::size_t parDirPos = fp_string.find_last_of("/");
+    // get directory
+    std::string dir = fp_string.substr(0, parDirPos);
+    // get file
+    std::string file = fp_string.substr(parDirPos, fp_string.length());
+    debugprintf("Checking if the file is a part of the Atomic Group: %s\n", file.c_str());
+    return std::find(atomicFilesGroup.begin(), atomicFilesGroup.end(), file) != atomicFilesGroup.end();
+  }
 
   path getPath(string relativePath) {
     path normalPath = (root / relativePath).lexically_normal();
@@ -388,8 +414,11 @@ class AFSImpl final : public FileSystemService::Service {
         auto ts_client = req->time_modified();
         bool file_changed = (ts_server.sec() > ts_client.sec()) || 
           (ts_server.sec() == ts_client.sec() && ts_server.nsec() > ts_client.nsec());
+        printf("[TestAuth]: Checking group lock for file: %s\n", filepath.c_str());
+        bool file_group_locked = checkFileInGroup(filepath.c_str()) && groupLocked; //return true if file is locked
 
         resp->set_file_changed(file_changed);
+        resp->set_file_group_locked(file_group_locked);
         // debugprintf("[TestAuth]: Function ended.\n");
         return Status::OK;
       } catch (const ProtocolException& e) {
@@ -617,6 +646,12 @@ class AFSImpl final : public FileSystemService::Service {
         auto time = readModifyTime(filepath);
         reply->mutable_time_modify()->CopyFrom(time);
         debugprintf("StoreUsingStream: Exiting function\n");
+        
+        // Release Group Lock
+        if(checkFileInGroup(filepath.c_str())){
+          setFileGroupLocked(0);
+          printf("[StoreUsingStream]File: %s was a part of Atomic Lock Group. \n", filepath.c_str());
+        }
 
         return Status::OK; 
       } catch (const ProtocolException& e) {
@@ -637,6 +672,11 @@ class AFSImpl final : public FileSystemService::Service {
         path filepath = getPath(request->pathname());
         debugprintf("FetchUsingStream: filepath = %s\n", filepath.c_str());
         FetchResponse reply;
+        //Set Group Lock
+        if(checkFileInGroup(filepath.c_str())){
+          printf("[FetchUsingStream]File: %s is a part of Atomic Lock Group. \n", filepath.c_str());
+          setFileGroupLocked(1);
+        }
         
         // Set response
         reply.mutable_time_modified()->CopyFrom(readModifyTime(filepath));
@@ -720,7 +760,7 @@ class AFSImpl final : public FileSystemService::Service {
 };
 
 void RunServer(path root) {
-  std::string server_address("0.0.0.0:50053");
+  std::string server_address("0.0.0.0:50052");
   AFSImpl service(root);
 
   ServerBuilder builder;
