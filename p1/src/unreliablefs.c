@@ -176,10 +176,10 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    // initgRPC("c220g5-110914.wisc.cloudlab.us:50057", conf.basedir);
+    initgRPC("c220g5-110914.wisc.cloudlab.us:50057", conf.basedir);
     // initgRPC("localhost:50053", conf.basedir);
     // initgRPC("c220g5-110922.wisc.cloudlab.us:50052", conf.basedir);
-    initgRPC("localhost:50052", conf.basedir);
+    // initgRPC("localhost:50052", conf.basedir);
 
     fprintf(stdout, "starting FUSE filesystem unreliablefs\n");
     int ret = fuse_main(args.argc, args.argv, &unreliable_ops, NULL);

@@ -545,7 +545,8 @@ class AFSImpl final : public FileSystemService::Service {
             path filepath = getPath(request->pathname());
             debugprintf("Create: filepath = %s\n", filepath.c_str());
             
-            int ret = open(filepath.c_str(), request->flags(), request->mode());
+            int fd = open(filepath.c_str(), request->flags(), request->mode());
+            close(fd);
             debugprintf("Create: Exiting function.\n");
             return Status::OK;
         } catch (const ProtocolException& e) {
