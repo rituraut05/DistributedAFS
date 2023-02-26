@@ -690,7 +690,7 @@ class AFSImpl final : public FileSystemService::Service {
         int totalChunks = 0;
         totalChunks = fileSize / CHUNK_SIZE;
         bool aligned = true;
-        int lastChunkSize = CHUNK_SIZE;
+        int lastChunkSize = fileSize == 0 ? 0 : CHUNK_SIZE;
         if (fileSize % CHUNK_SIZE) {
           totalChunks++;
           aligned = false;

@@ -758,6 +758,7 @@ extern "C" {
 			debugprintf("CreateFile: %s, %d, %d\n", abs_path.c_str(), flags, mode);
 			struct timespec curr_time;
 			timespec_get(&curr_time, TIME_UTC);
+			curr_time.tv_sec--;
 			open_map[abs_path] = curr_time;
 			return ret;
 		} 
@@ -845,6 +846,7 @@ extern "C" {
 
 		GetModifyTime(abs_path, &file_modified_time);
 		// std::cout << abs_path << " m:" << file_modified_time.tv_sec << " o:" << file_opened_time.tv_sec << "\n";
+		// std::cout << abs_path << " m:" << file_modified_time.tv_nsec << " o:" << file_opened_time.tv_nsec << "\n";
 		if(open_map.find(abs_path) == open_map.end() || 
 			file_modified_time.tv_sec > file_opened_time.tv_sec ||
 			(file_modified_time.tv_sec == file_opened_time.tv_sec && file_modified_time.tv_nsec > file_opened_time.tv_nsec)
@@ -855,13 +857,7 @@ extern "C" {
 				ClientContext context;
 				reply.Clear();
 				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-				request.set_pathname(path);
-				std::unique_ptr<ClientWriter<StoreRequest>> writer(
-					stub_->StoreUsingStream(&context, &reply));
-
-				std::ifstream fin(abs_path.c_str(), std::ios::binary);
-				fin.clear();
-				fin.seekg(0, ios::beg);
+				// std::cout << "Checking paths; abs_path=" << abs_path << " path=" << path << "\n";
 
 				struct stat st;
 				stat(abs_path.c_str(), &st);
@@ -871,13 +867,26 @@ extern "C" {
 				bool aligned = true;
 				int lastChunkSize = fileSize == 0 ? 0 : CHUNK_SIZE;
 				if (fileSize % CHUNK_SIZE) {
-						totalChunks++;
-						aligned = false;
-						lastChunkSize = fileSize % CHUNK_SIZE;
+					totalChunks++;
+					aligned = false;
+					lastChunkSize = fileSize % CHUNK_SIZE;
 				}
 				debugprintf("[CloseFileUsingStream]: fileSize = %d\n", fileSize);
 				debugprintf("[CloseFileUsingStream]: totalChunks = %d\n", totalChunks);
 				debugprintf("[CloseFileUsingStream]: lastChunkSize = %d\n", lastChunkSize);
+
+				if(fileSize == 0) {
+					debugprintf("CloseFileUsingStream: Nothing to send.\n");
+					return 0;
+				}
+
+				request.set_pathname(path);
+				std::unique_ptr<ClientWriter<StoreRequest>> writer(
+				stub_->StoreUsingStream(&context, &reply));
+
+				std::ifstream fin(abs_path.c_str(), std::ios::binary);
+				fin.clear();
+				fin.seekg(0, ios::beg);
 
 				unsigned long bytes = 0;
 				unsigned long bytes_read = 0;
@@ -892,6 +901,7 @@ extern "C" {
 					{
 						auto bcnt = fin.gcount();
 						bytes_read += bcnt;
+						request.set_pathname(path);
 						request.set_file_contents(buffer, bcnt);
 						// debugprintf("[CloseFileUsingStream]: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
 
@@ -901,7 +911,7 @@ extern "C" {
 							break; 
 						}
 					} else {
-						debugprintf("[CloseFileUsingStream]: Failed to read chunk [iter %ld, total %ld B]\n", chunk, bytes);
+						debugprintf("[CloseFileUsingStream]: Failed to write chunk [iter %ld, total %ld B]\n", chunk, bytes);
 					}
 				}
 				fin.close();
@@ -1047,6 +1057,7 @@ extern "C" {
 		}
 		struct timespec curr_time;
 		timespec_get(&curr_time, TIME_UTC);
+		curr_time.tv_sec--;
 		open_map[abs_path] = curr_time;
 		debugprintf("OpenFileUsingStream: Exiting function\n");
 		return file;
