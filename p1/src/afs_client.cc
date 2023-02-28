@@ -17,10 +17,8 @@
 #include <fstream>
 #include <sstream>
 
-//#include <fuse.h>
 #include "afs.grpc.pb.h"
 #include "afs_client.hh"
-//#include <unreliablefs_ops.h>
 
 using grpc::Channel;
 using grpc::ClientContext;
@@ -74,13 +72,7 @@ using afs::RenameResponse;
 #define MAX_RETRIES           5                                     // rpc retry
 #define CHUNK_SIZE            4096																	// for streaming 
 
-enum fuse_readdir_flags {
-         FUSE_READDIR_PLUS = (1 << 0),
-};
 
-enum fuse_fill_dir_flags {
-         FUSE_FILL_DIR_PLUS = (1 << 1),
-};
 
 string get_relative_path(string path, string root) {
 	string path_copy = path;
@@ -94,7 +86,6 @@ bool file_exists(std::string path) {
 }
 
 int GetModifyTime(std::string path, timespec * t) {
-	printf("[GetModifyTime]: Function entered.\n");
 	struct stat sb;
 	if (stat(path.c_str(), &sb) == -1) {
 		printf("[GetModifyTime]: Failed to stat file.\n");
@@ -129,7 +120,6 @@ vector<string> tokenize_path(string path, char delim, bool is_file) {
 			temp = temp + (path.c_str())[i];           
 	}
 
-	// if path is dir not file, create all dirs in path
 	if (!is_file)
 		tokens.push_back(temp);
 
@@ -137,7 +127,6 @@ vector<string> tokenize_path(string path, char delim, bool is_file) {
 }
 
 int create_path(string relative_path, bool is_file, string root) {
-	printf("[create_path]: Function entered.\n");
 	string base_path = root;
 	vector<string> tokens = tokenize_path(relative_path, '/', is_file);
 	for (auto token : tokens)
@@ -168,7 +157,6 @@ string readFileIntoString(string path) {
 	ifstream input_file(path);
 	if (!input_file.is_open()) 
 	{
-		printf("readFileIntoString(): failed\n");
 		return string();
 	}
 	return string((std::istreambuf_iterator<char>(input_file)), std::istreambuf_iterator<char>());
@@ -210,7 +198,6 @@ extern "C" {
 			Status status;
 			uint32_t retryCount = 0;
 			
-			// Retry w backoff
 			do 
 			{
 				ClientContext context;
@@ -220,10 +207,8 @@ extern "C" {
 				retryCount++;
 			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-			// Checking RPC Status
 			if (status.ok()) 
 			{
-				printf("Ping: RPC Success\n");
 				auto end = std::chrono::steady_clock::now();
 				std::chrono::nanoseconds ns = end-start;
 				*round_trip_time = ns.count();
@@ -235,14 +220,12 @@ extern "C" {
 			}
 			else
 			{
-				printf("Ping: RPC failure\n");
-				printf("Ping: Exiting function\n");
+
 				return -1;
 			}
     }
 
 	int FileSystemClient::GetFileStat(std::string abs_path, struct stat *buf, std::string root) {
-			printf("[GetFileStat]: Function entered.\n");
 			GetFileStatRequest req;
 			GetFileStatResponse resp;
 			Status status;
@@ -251,10 +234,8 @@ extern "C" {
 
 			auto test_auth_result = TestAuth(abs_path, root);
 			if(!test_auth_result.status.ok() || test_auth_result.response.file_changed()) {
-				// Make RPC & retry
 				req.set_pathname(path);
 				do {
-					printf("[GetFileStat]: Invoking GetFileStat RPC.\n");
 					ClientContext context;
 					resp.Clear();
 					sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
@@ -262,10 +243,8 @@ extern "C" {
 					status = stub_->GetFileStat(&context, req, &resp);
 				} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-				// Checking RPC Status
 				if (status.ok()) 
 				{
-					printf("[GetFileStat]: GetFileStat RPC success.\n");
 					int server_errno = resp.fs_errno();
 					if(server_errno) {
 						printf("[GetFileStat]: Error %d on server.\n", server_errno);
@@ -295,13 +274,11 @@ extern "C" {
 					return -1;
 				}
 			} else {
-				printf("[GetFileStat]: No change in file, getting stat from client local.\n");
 				return lstat(abs_path.c_str(), buf);
 			}
 		}
 
 	int FileSystemClient::OpenFile(std::string abs_path, std::string root) {
-			printf("[OpenFile]: Function entered.\n");
 			int file;
 			int retryCount = 0;
 			FetchRequest req;
@@ -311,15 +288,9 @@ extern "C" {
 	
 			auto test_auth_resp = TestAuth(abs_path, root);			
 			if (!test_auth_resp.status.ok() || test_auth_resp.response.file_changed()) {  
-				if(test_auth_resp.status.ok()) {
-					printf("[OpenFile]: TestAuth returns file changed. Fetching file from server.\n");
-				} else {
-					printf("[OpenFile]: Failure invoking TestAuth RPC. Fetching file from server.\n");
-				}
 					
 				req.set_pathname(path);
 				do {
-					printf("[OpenFile]: Invoking Fetch RPC.\n");
 					ClientContext context;
 					resp.Clear();
 					sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
@@ -327,43 +298,31 @@ extern "C" {
 					status = stub_->Fetch(&context, req, &resp);
 				} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 	
-				// Checking RPC Status
 				if (status.ok()) {
-					printf("[OpenFile]: Fetch RPC success.\n");
 					int server_errno = resp.fs_errno();
 					if(server_errno) {
 						printf("[OpenFile] Error %d on server\n", server_errno);
-						printf("[OpenFile]: Function ended in failure.\n");
 						errno = server_errno;
 						return -1;
 					}
 
-					// create directory tree if not exists, as it exists on the server
 					if (create_path(path, true, root) != 0) {
-						printf("[OpenFile]: create_path() call failed.\n");
 						return -1;
 					}
 
-					// opens file if it already exists, else creates the file at the path 
 					file = open(abs_path.c_str(), O_RDWR | O_TRUNC | O_CREAT, 0666);
 					if (file == -1) {
-						printf("[OpenFile]: open() to copy file contents failed.\n");
 						return -1;
 					}
 
-					// Writes the contents fetched from server to the file 
 					if (write(file, resp.file_contents().c_str(), resp.file_contents().length()) == -1) {
-						printf("[OpenFile]: write() to file in client cache failed.\n");
 						return -1;
 					}
 
-					// flush contents to file in client
 					if (fsync(file) == -1) {
-						printf("[OpenFile]: fsync() to file in client cache failed.\n");
 						return -1;
 					}
 
-					// set file open and modified times according to what server sends
 					struct timespec t;
 					auto modified_time = resp.time_modified();
 					t.tv_sec = modified_time.sec();
@@ -372,36 +331,28 @@ extern "C" {
 						printf("[OpenFile]: Error (%d) setting file open and modified timings.\n", errno);
 					}
 							
-					// close the file on local client
 					if (close(file) == -1) {
-						printf("[OpenFile]: close() on file in client cache failed.\n");
 						return -1;
 					}
 					printf("[OpenFile]: Successfully wrote %d bytes to cache.\n", (int)resp.file_contents().length()); 
 				} 
 				else 
 				{
-					printf("[OpenFile]: Fetch RPC Failed.\n");
 					errno = transform_rpc_err(status.error_code());
 					return -1;
 				}
-			} else {
-				printf("[OpenFile]: TestAuth reported no change in file.\n");
 			}
 
 			file = open(abs_path.c_str(), O_RDWR | O_CREAT, 0666); 
 			if (file == -1)
 			{
-				printf("[OpenFile]: open() on client copy failed.\n");
 				return -1;
 			}
 			
-			printf("[OpenFile]: Function ended.\n");
 			return file;
 		}
 
 	TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root) {
-			printf("[TestAuth]: Function entered.\n");
 			TestAuthRequest req;
 			TestAuthResponse resp;
 			Timestamp t;
@@ -410,29 +361,23 @@ extern "C" {
 			int retryCount = 0;
 			std::string path = get_relative_path(abs_path, root);
 
-			// Check if local file exists
-			// Set TestAuth response to true if local file doesn't exist
 			if (!file_exists(abs_path)) {
 				printf("[TestAuth]: File does not exist locally. Set TestAuth response to true.\n");
 				resp.set_file_changed(true);
 				return TestAuthReturn(status, resp);
 			}
 			
-			// Get local modified time
-			// Set TestAuth response to true if getting local file modified time fails
 			if (GetModifyTime(abs_path, &fileModifiedTime) != 0) {
 				printf("[TestAuth]: Failure to get local file modified time. Setting TestAuth response to true.\n");
 				resp.set_file_changed(true); 
 				return TestAuthReturn(status, resp);
 			}
 
-			// Set Request
 			req.set_pathname(path);
 			t.set_sec(fileModifiedTime.tv_sec);
 			t.set_nsec(fileModifiedTime.tv_nsec);
 			req.mutable_time_modified()->CopyFrom(t);
 
-			// Make RPC and retry 
 			do {
 				printf("[TestAuth]: Invoking TestAuth RPC.\n");
 				ClientContext context;
@@ -454,7 +399,6 @@ extern "C" {
 		}
 
 	int FileSystemClient::Access(std::string abs_path, int mode, std::string root) {
-			printf("[Access]: Function entered.\n");
 			AccessRequest req;
 			AccessResponse resp;
 			Status status;
@@ -499,7 +443,6 @@ extern "C" {
 			request.set_pathname(path);
 			request.set_mode(mode);
 
-			// Make RPC & retry
                 
 			do         
 			{
@@ -512,7 +455,6 @@ extern "C" {
 				retryCount++;
 			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
    	  
-      // Checking RPC Status	
 			if (status.ok()) {
 				printf("MakeDir: RPC Success\n");
 				printf("MakeDir: Exiting function\n");
@@ -524,7 +466,6 @@ extern "C" {
 					return -1;
 				}
                     
-				// making the dir in cache directory, hierarchical if necessary
 				create_path(path, false, root);
 				return 0;
 			}
@@ -547,8 +488,6 @@ extern "C" {
 			std::string path = get_relative_path(abs_path, root);
 			request.set_pathname(path);
 
-			// Make RPC
-			// Retry w backoff
 						
 			do
 			{
@@ -560,7 +499,6 @@ extern "C" {
 					retryCount++;
 			} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-						// Checking RPC Status
 
 			if (status.ok())
 			{
@@ -575,8 +513,6 @@ extern "C" {
 				return -1;
 					}
 
-								// removing directory from cache
-					// rmdir(get_cache_path(path).c_str());
 					rmdir(abs_path.c_str());
 					return 0;
 			}
@@ -599,8 +535,6 @@ extern "C" {
 			std::string path = get_relative_path(abs_path, root);
 			request.set_pathname(path);
 
-			// Make RPC
-			// Retry w backoff
 		
 			do
 			{
@@ -613,9 +547,7 @@ extern "C" {
 					} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
 				
-			// std::cout << "count = " << reply.entries().size() << std::endl;
 
-			// Checking RPC Status
 			if (status.ok()) {
 								printf("ReadDir: RPC Success\n");       
 							uint server_errno = reply.fs_errno();
@@ -648,7 +580,6 @@ extern "C" {
 
 	int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
 	{
-		printf("CloseFile: Entered function\n");
 		StoreRequest request;
 		StoreResponse reply;
 		Status status;
@@ -656,16 +587,12 @@ extern "C" {
 		std::string path = get_relative_path(abs_path, root);
 		
 
-		// Set request
-		// const string cache_path = get_cache_path(path);
 		
 		request.set_pathname(path);
 
 		string content = readFileIntoString(abs_path);
 		request.set_file_contents(content);
 
-		// Make RPC
-		// Retry with backoff
 		do 
 		{
 			ClientContext context;
@@ -676,7 +603,6 @@ extern "C" {
 			retryCount++;
 		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-		// Checking RPC Status
 		if (status.ok()) 
 		{
 			printf("CloseFile: RPC Success\n");
@@ -726,7 +652,6 @@ extern "C" {
 		request.set_mode(mode);
 		request.set_flags(flags);
 
-		// Make RPC and retry
 		do 
 		{
 			ClientContext context;
@@ -737,7 +662,6 @@ extern "C" {
 			retryCount++;
 		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
-		// Checking RPC Status
 		if (status.ok()) 
 		{
 			printf("CreateFile: RPC Success\n");
@@ -768,7 +692,6 @@ extern "C" {
 
 	int FileSystemClient::DeleteFile(std::string abs_path, std::string root) 
 	{
-		printf("DeleteFile: Entered function\n");
 		RemoveRequest request;
 		RemoveResponse reply;
 		Status status;
@@ -777,8 +700,6 @@ extern "C" {
 
 		request.set_pathname(path);
 		
-		// Make RPC 
-		// Retry with backoff
 		do 
 		{
 			ClientContext context;
@@ -790,7 +711,6 @@ extern "C" {
 		} while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE );
 		
 
-		// Checking RPC Status 
 		if (status.ok()) 
 		{
 			printf("DeleteFile: RPC success\n");
@@ -804,7 +724,6 @@ extern "C" {
 			
 			printf("DeleteFile: Exiting function\n");
 
-			// remove from local cache
 			if (file_exists(abs_path))
 			{
 				unlink(abs_path.c_str());
@@ -826,7 +745,6 @@ extern "C" {
 	}
 
 	int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::string root) {
-		printf("[CloseFileUsingStream]: Function entered. %s\n", abs_path.c_str());
 		if (close(fd) == -1) {
 				printf("[CloseFileUsingStream]: close() failed.\n");
 				return -1;
@@ -840,8 +758,6 @@ extern "C" {
 		std::string path = get_relative_path(abs_path, root);
 
 		GetModifyTime(abs_path, &file_modified_time);
-		// std::cout << abs_path << " m:" << file_modified_time.tv_sec << " o:" << file_opened_time.tv_sec << "\n";
-		// std::cout << abs_path << " m:" << file_modified_time.tv_nsec << " o:" << file_opened_time.tv_nsec << "\n";
 		if(open_map.find(abs_path) == open_map.end() || 
 			file_modified_time.tv_sec > file_opened_time.tv_sec ||
 			(file_modified_time.tv_sec == file_opened_time.tv_sec && file_modified_time.tv_nsec > file_opened_time.tv_nsec)
@@ -852,7 +768,6 @@ extern "C" {
 				ClientContext context;
 				reply.Clear();
 				sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-				// std::cout << "Checking paths; abs_path=" << abs_path << " path=" << path << "\n";
 
 				struct stat st;
 				stat(abs_path.c_str(), &st);
@@ -898,7 +813,6 @@ extern "C" {
 						bytes_read += bcnt;
 						request.set_pathname(path);
 						request.set_file_contents(buffer, bcnt);
-						// printf("[CloseFileUsingStream]: Read chunk [iter %ld, expect %ld B, read %ld B]\n",chunk, bytes, bytes_read);
 
 						if (!writer->Write(request)) 
 						{
@@ -1058,7 +972,6 @@ extern "C" {
 
   int FileSystemClient::Rename(std::string abs_path, std::string new_name, std::string root)
         {
-                printf("Rename: Entered function\n");
                 RenameRequest request;
                 RenameResponse reply;
                 Status status;
@@ -1071,7 +984,6 @@ extern "C" {
                 request.set_pathname(old_path);
 								request.set_componentname(new_path);
 
-                // Make RPC
                 do
                 {
                         ClientContext context;
@@ -1083,19 +995,10 @@ extern "C" {
                 } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE );
 
 
-                // Checking RPC Status
                 if (status.ok())
                 {
                         printf("Rename: RPC success\n");
-                        // uint server_errno = reply.fs_errno();
-                        // if(server_errno) {
-                        //         printf("...but error %d on server\n", server_errno);
-                        //         printf("Rename: Exiting function\n");
-                        //         errno = server_errno;
-                        //                 return -1;
-                        // }
 
-                        // printf("Rename: Exiting function\n");
 
 						printf("Running rename\n");
                         
@@ -1113,8 +1016,5 @@ extern "C" {
 };
 
 
-// g++ -std=c++17 afs_client.cc afs.pb.cc afs.grpc.pb.cc -o client `pkg-config --libs --cflags protobuf grpc_cpp_plugin`
 
-// g++ client.o -L/usr/local/lib `pkg-config --libs --static protobuf grpc++ grpc` -Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed -ldl afs_client.cc
 
-// g++ -std=c++11 -I ./ -I ./ afs_client.cc afs.pb.cc afs.grpc.pb.cc -L libprotobuf -lprotobuf -L grpc++ -lgrpc++ -lgrpc -o afs_client.o
