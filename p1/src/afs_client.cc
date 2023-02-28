@@ -67,9 +67,6 @@ using afs::CreateResponse;
 using afs::RenameRequest;
 using afs::RenameResponse;
 
-#define RETRY_TIME_START 1 // in seconds
-#define RETRY_TIME_MULTIPLIER 2 // for rpc
-#define MAX_RETRIES 5 // rpc retry
 #define CHUNK_SIZE 4096 // for streaming
 
 string get_relative_path(string path, string root)
@@ -199,14 +196,9 @@ int FileSystemClient::Ping(int* round_trip_time)
     PingMessage request;
     PingMessage reply;
     Status status;
-    uint32_t retryCount = 0;
 
-    do {
         ClientContext context;
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->Ping(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         auto end = std::chrono::steady_clock::now();
@@ -225,19 +217,14 @@ int FileSystemClient::GetFileStat(std::string abs_path, struct stat* buf, std::s
     GetFileStatRequest req;
     GetFileStatResponse resp;
     Status status;
-    int retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     auto test_auth_result = TestAuth(abs_path, root);
     if (!test_auth_result.status.ok() || test_auth_result.response.file_changed()) {
         req.set_pathname(path);
-        do {
             ClientContext context;
             resp.Clear();
-            sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-            retryCount++;
             status = stub_->GetFileStat(&context, req, &resp);
-        } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
         if (status.ok()) {
             int server_errno = resp.fs_errno();
@@ -277,7 +264,6 @@ int FileSystemClient::GetFileStat(std::string abs_path, struct stat* buf, std::s
 int FileSystemClient::OpenFile(std::string abs_path, std::string root)
 {
     int file;
-    int retryCount = 0;
     FetchRequest req;
     FetchResponse resp;
     Status status;
@@ -287,13 +273,9 @@ int FileSystemClient::OpenFile(std::string abs_path, std::string root)
     if (!test_auth_resp.status.ok() || test_auth_resp.response.file_changed()) {
 
         req.set_pathname(path);
-        do {
             ClientContext context;
             resp.Clear();
-            sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-            retryCount++;
             status = stub_->Fetch(&context, req, &resp);
-        } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
         if (status.ok()) {
             int server_errno = resp.fs_errno();
@@ -354,7 +336,6 @@ TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root
     Timestamp t;
     timespec fileModifiedTime;
     Status status;
-    int retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     if (!file_exists(abs_path)) {
@@ -374,13 +355,9 @@ TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root
     t.set_nsec(fileModifiedTime.tv_nsec);
     req.mutable_time_modified()->CopyFrom(t);
 
-    do {
         ClientContext context;
         resp.Clear();
-        sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-        retryCount++;
         status = stub_->TestAuth(&context, req, &resp);
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("[TestAuth]: TestAuth RPC success.\n");
@@ -398,19 +375,14 @@ int FileSystemClient::Access(std::string abs_path, int mode, std::string root)
     AccessRequest req;
     AccessResponse resp;
     Status status;
-    int retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     req.set_pathname(path);
     req.set_mode(mode);
 
-    do {
         ClientContext context;
         resp.Clear();
-        sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
-        retryCount++;
         status = stub_->Access(&context, req, &resp);
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("[Access]: Access RPC success.\n");
@@ -434,20 +406,15 @@ int FileSystemClient::MakeDir(std::string abs_path, std::string root, int mode)
     MakeDirRequest request;
     MakeDirResponse reply;
     Status status;
-    int retryCount = 0;
 
     std::string path = get_relative_path(abs_path, root);
     request.set_pathname(path);
     request.set_mode(mode);
 
-    do {
         ClientContext context;
         reply.Clear();
         printf("MakdeDir: Path %s\n", path.c_str());
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->MakeDir(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("MakeDir: RPC Success\n");
@@ -477,18 +444,13 @@ int FileSystemClient::RemoveDir(std::string abs_path, std::string root)
     RemoveDirRequest request;
     RemoveDirResponse reply;
     Status status;
-    uint32_t retryCount = 0;
 
     std::string path = get_relative_path(abs_path, root);
     request.set_pathname(path);
 
-    do {
         ClientContext context;
         reply.Clear();
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->RemoveDir(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("RemoveDir: RPC Success\n");
@@ -519,18 +481,13 @@ int FileSystemClient::ReadDir(std::string abs_path, std::string root, void* buf,
     ReadDirRequest request;
     ReadDirResponse reply;
     Status status;
-    uint32_t retryCount = 0;
 
     std::string path = get_relative_path(abs_path, root);
     request.set_pathname(path);
 
-    do {
         ClientContext context;
         reply.Clear();
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->ReadDir(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("ReadDir: RPC Success\n");
@@ -565,7 +522,6 @@ int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
     StoreRequest request;
     StoreResponse reply;
     Status status;
-    uint32_t retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     request.set_pathname(path);
@@ -573,13 +529,9 @@ int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
     string content = readFileIntoString(abs_path);
     request.set_file_contents(content);
 
-    do {
         ClientContext context;
         reply.Clear();
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->Store(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("CloseFile: RPC Success\n");
@@ -622,20 +574,15 @@ int FileSystemClient::CreateFile(std::string abs_path, std::string root, int mod
     CreateRequest request;
     CreateResponse reply;
     Status status;
-    uint32_t retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     request.set_pathname(path);
     request.set_mode(mode);
     request.set_flags(flags);
 
-    do {
         ClientContext context;
         reply.Clear();
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->Create(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("CreateFile: RPC Success\n");
@@ -668,18 +615,13 @@ int FileSystemClient::DeleteFile(std::string abs_path, std::string root)
     RemoveRequest request;
     RemoveResponse reply;
     Status status;
-    uint32_t retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     request.set_pathname(path);
 
-    do {
         ClientContext context;
         reply.Clear();
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->Remove(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("DeleteFile: RPC success\n");
@@ -719,17 +661,14 @@ int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::st
     StoreRequest request;
     StoreResponse reply;
     Status status;
-    int retryCount = 0;
     timespec file_modified_time;
     timespec file_opened_time = open_map[abs_path];
     std::string path = get_relative_path(abs_path, root);
 
     GetModifyTime(abs_path, &file_modified_time);
     if (open_map.find(abs_path) == open_map.end() || file_modified_time.tv_sec > file_opened_time.tv_sec || (file_modified_time.tv_sec == file_opened_time.tv_sec && file_modified_time.tv_nsec > file_opened_time.tv_nsec)) {
-        do {
             ClientContext context;
             reply.Clear();
-            sleep(retryCount * RETRY_TIME_START * RETRY_TIME_MULTIPLIER);
 
             struct stat st;
             stat(abs_path.c_str(), &st);
@@ -743,10 +682,6 @@ int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::st
                 aligned = false;
                 lastChunkSize = fileSize % CHUNK_SIZE;
             }
-            printf("[CloseFileUsingStream]: fileSize = %d\n", fileSize);
-            printf("[CloseFileUsingStream]: totalChunks = %d\n", totalChunks);
-            printf("[CloseFileUsingStream]: lastChunkSize = %d\n", lastChunkSize);
-
             if (fileSize == 0) {
                 printf("CloseFileUsingStream: Nothing to send.\n");
                 return 0;
@@ -787,8 +722,6 @@ int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::st
             writer->WritesDone();
             status = writer->Finish();
 
-            retryCount++;
-        } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
         if (status.ok()) {
             printf("[CloseFileUsingStream]: RPC Success\n");
@@ -847,7 +780,6 @@ int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root
     FetchResponse reply;
     Status status;
     ClientContext context;
-    int retryCount = 0;
     std::string path = get_relative_path(abs_path, root);
 
     auto test_auth_result = TestAuth(abs_path, root);
@@ -864,10 +796,9 @@ int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root
             return -1;
         }
 
-        do {
+        
             request.set_pathname(path);
 
-            sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
 
             std::unique_ptr<ClientReader<FetchResponse> > reader(
                 stub_->FetchUsingStream(&context, request));
@@ -883,8 +814,7 @@ int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root
 
             Status status = reader->Finish();
             file.close();
-            retryCount++;
-        } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
+        
 
         if (status.ok()) {
             printf("OpenFileUsingStream: RPC Success\n");
@@ -938,7 +868,6 @@ int FileSystemClient::Rename(std::string abs_path, std::string new_name, std::st
     RenameRequest request;
     RenameResponse reply;
     Status status;
-    uint32_t retryCount = 0;
 
     std::string old_path = get_relative_path(abs_path, root);
     std::string new_path = get_relative_path(new_name, root);
@@ -946,13 +875,9 @@ int FileSystemClient::Rename(std::string abs_path, std::string new_name, std::st
     request.set_pathname(old_path);
     request.set_componentname(new_path);
 
-    do {
         ClientContext context;
         reply.Clear();
-        sleep(RETRY_TIME_START * retryCount * RETRY_TIME_MULTIPLIER);
         status = stub_->Rename(&context, request, &reply);
-        retryCount++;
-    } while (retryCount < MAX_RETRIES && status.error_code() == StatusCode::UNAVAILABLE);
 
     if (status.ok()) {
         printf("Rename: RPC success\n");
