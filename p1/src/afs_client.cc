@@ -69,27 +69,27 @@ using afs::RenameResponse;
 
 #define CHUNK_SIZE 4096 // for streaming
 
-string get_relative_path(string path, string root)
+string getRelativePath(string path, string root)
 {
     string path_copy = path;
     path_copy.erase(0, root.length());
     return path_copy;
 }
 
-bool file_exists(std::string path)
+bool fileExists(std::string path)
 {
     struct stat s;
     return (stat(path.c_str(), &s) == 0);
 }
 
-int GetModifyTime(std::string path, timespec* t)
+int getModifiedTime(std::string path, timespec* t)
 {
     struct stat sb;
     if (stat(path.c_str(), &sb) == -1) {
-        printf("[GetModifyTime]: Failed to stat file.\n");
+        printf("[getModifiedTime]: Failed to stat file.\n");
         return -1;
     }
-    printf("[GetModifyTime]: Function ended.\n");
+    printf("[getModifiedTime]: Function ended.\n");
     *t = sb.st_mtim;
     return 0;
 }
@@ -100,13 +100,13 @@ int set_file_open_time(int fd, timespec t)
     return futimens(fd, p);
 }
 
-int set_timings(string path, timespec t)
+int setTimings(string path, timespec t)
 {
     struct timespec p[2] = { t, t };
     return utimensat(AT_FDCWD, path.c_str(), p, 0);
 }
 
-vector<string> tokenize_path(string path, char delim, bool is_file)
+vector<string> pathToken(string path, char delim, bool is_file)
 {
     vector<string> tokens;
     string temp = "";
@@ -126,27 +126,27 @@ vector<string> tokenize_path(string path, char delim, bool is_file)
     return tokens;
 }
 
-int create_path(string relative_path, bool is_file, string root)
+int createPath(string relative_path, bool is_file, string root)
 {
     string base_path = root;
-    vector<string> tokens = tokenize_path(relative_path, '/', is_file);
+    vector<string> tokens = pathToken(relative_path, '/', is_file);
     for (auto token : tokens) {
         base_path += token + "/";
         struct stat s;
         int r = stat(base_path.c_str(), &s);
         if (r != 0 && errno == 2) {
-            printf("[create_path]: stat() ENOENT\n");
+            printf("[createPath]: stat() ENOENT\n");
             if (mkdir(base_path.c_str(), S_IRWXU) != 0) {
-                printf("[create_path]: mkdir() failed : %d\n", errno);
+                printf("[createPath]: mkdir() failed : %d\n", errno);
                 return -1;
             }
         }
         else if (r != 0) {
-            printf("[create_path]: stat() failed : %d\n", errno);
+            printf("[createPath]: stat() failed : %d\n", errno);
             return -1;
         }
     }
-    printf("[create_path]: Function ended.\n");
+    printf("[createPath]: Function ended.\n");
     return 0;
 }
 
@@ -197,8 +197,8 @@ int FileSystemClient::Ping(int* round_trip_time)
     PingMessage reply;
     Status status;
 
-        ClientContext context;
-        status = stub_->Ping(&context, request, &reply);
+    ClientContext context;
+    status = stub_->Ping(&context, request, &reply);
 
     if (status.ok()) {
         auto end = std::chrono::steady_clock::now();
@@ -217,14 +217,14 @@ int FileSystemClient::GetFileStat(std::string abs_path, struct stat* buf, std::s
     GetFileStatRequest req;
     GetFileStatResponse resp;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     auto test_auth_result = TestAuth(abs_path, root);
     if (!test_auth_result.status.ok() || test_auth_result.response.file_changed()) {
         req.set_pathname(path);
-            ClientContext context;
-            resp.Clear();
-            status = stub_->GetFileStat(&context, req, &resp);
+        ClientContext context;
+        resp.Clear();
+        status = stub_->GetFileStat(&context, req, &resp);
 
         if (status.ok()) {
             int server_errno = resp.fs_errno();
@@ -267,15 +267,15 @@ int FileSystemClient::OpenFile(std::string abs_path, std::string root)
     FetchRequest req;
     FetchResponse resp;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     auto test_auth_resp = TestAuth(abs_path, root);
     if (!test_auth_resp.status.ok() || test_auth_resp.response.file_changed()) {
 
         req.set_pathname(path);
-            ClientContext context;
-            resp.Clear();
-            status = stub_->Fetch(&context, req, &resp);
+        ClientContext context;
+        resp.Clear();
+        status = stub_->Fetch(&context, req, &resp);
 
         if (status.ok()) {
             int server_errno = resp.fs_errno();
@@ -285,7 +285,7 @@ int FileSystemClient::OpenFile(std::string abs_path, std::string root)
                 return -1;
             }
 
-            if (create_path(path, true, root) != 0) {
+            if (createPath(path, true, root) != 0) {
                 return -1;
             }
 
@@ -336,15 +336,15 @@ TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root
     Timestamp t;
     timespec fileModifiedTime;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
-    if (!file_exists(abs_path)) {
+    if (!fileExists(abs_path)) {
         printf("[TestAuth]: File does not exist locally. Set TestAuth response to true.\n");
         resp.set_file_changed(true);
         return TestAuthReturn(status, resp);
     }
 
-    if (GetModifyTime(abs_path, &fileModifiedTime) != 0) {
+    if (getModifiedTime(abs_path, &fileModifiedTime) != 0) {
         printf("[TestAuth]: Failure to get local file modified time. Setting TestAuth response to true.\n");
         resp.set_file_changed(true);
         return TestAuthReturn(status, resp);
@@ -355,9 +355,9 @@ TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root
     t.set_nsec(fileModifiedTime.tv_nsec);
     req.mutable_time_modified()->CopyFrom(t);
 
-        ClientContext context;
-        resp.Clear();
-        status = stub_->TestAuth(&context, req, &resp);
+    ClientContext context;
+    resp.Clear();
+    status = stub_->TestAuth(&context, req, &resp);
 
     if (status.ok()) {
         printf("[TestAuth]: TestAuth RPC success.\n");
@@ -375,14 +375,14 @@ int FileSystemClient::Access(std::string abs_path, int mode, std::string root)
     AccessRequest req;
     AccessResponse resp;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     req.set_pathname(path);
     req.set_mode(mode);
 
-        ClientContext context;
-        resp.Clear();
-        status = stub_->Access(&context, req, &resp);
+    ClientContext context;
+    resp.Clear();
+    status = stub_->Access(&context, req, &resp);
 
     if (status.ok()) {
         printf("[Access]: Access RPC success.\n");
@@ -407,14 +407,14 @@ int FileSystemClient::MakeDir(std::string abs_path, std::string root, int mode)
     MakeDirResponse reply;
     Status status;
 
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
     request.set_pathname(path);
     request.set_mode(mode);
 
-        ClientContext context;
-        reply.Clear();
-        printf("MakdeDir: Path %s\n", path.c_str());
-        status = stub_->MakeDir(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    printf("MakdeDir: Path %s\n", path.c_str());
+    status = stub_->MakeDir(&context, request, &reply);
 
     if (status.ok()) {
         printf("MakeDir: RPC Success\n");
@@ -427,7 +427,7 @@ int FileSystemClient::MakeDir(std::string abs_path, std::string root, int mode)
             return -1;
         }
 
-        create_path(path, false, root);
+        createPath(path, false, root);
         return 0;
     }
     else {
@@ -445,12 +445,12 @@ int FileSystemClient::RemoveDir(std::string abs_path, std::string root)
     RemoveDirResponse reply;
     Status status;
 
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
     request.set_pathname(path);
 
-        ClientContext context;
-        reply.Clear();
-        status = stub_->RemoveDir(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    status = stub_->RemoveDir(&context, request, &reply);
 
     if (status.ok()) {
         printf("RemoveDir: RPC Success\n");
@@ -482,12 +482,12 @@ int FileSystemClient::ReadDir(std::string abs_path, std::string root, void* buf,
     ReadDirResponse reply;
     Status status;
 
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
     request.set_pathname(path);
 
-        ClientContext context;
-        reply.Clear();
-        status = stub_->ReadDir(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    status = stub_->ReadDir(&context, request, &reply);
 
     if (status.ok()) {
         printf("ReadDir: RPC Success\n");
@@ -522,16 +522,16 @@ int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
     StoreRequest request;
     StoreResponse reply;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     request.set_pathname(path);
 
     string content = readFileIntoString(abs_path);
     request.set_file_contents(content);
 
-        ClientContext context;
-        reply.Clear();
-        status = stub_->Store(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    status = stub_->Store(&context, request, &reply);
 
     if (status.ok()) {
         printf("CloseFile: RPC Success\n");
@@ -549,7 +549,7 @@ int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
         t.tv_sec = timing.sec();
         t.tv_nsec = timing.nsec();
 
-        if (set_timings(abs_path, t) == -1) {
+        if (setTimings(abs_path, t) == -1) {
             printf("CloseFile: error (%d) setting file timings\n", errno);
         }
         else {
@@ -574,15 +574,15 @@ int FileSystemClient::CreateFile(std::string abs_path, std::string root, int mod
     CreateRequest request;
     CreateResponse reply;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     request.set_pathname(path);
     request.set_mode(mode);
     request.set_flags(flags);
 
-        ClientContext context;
-        reply.Clear();
-        status = stub_->Create(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    status = stub_->Create(&context, request, &reply);
 
     if (status.ok()) {
         printf("CreateFile: RPC Success\n");
@@ -596,7 +596,7 @@ int FileSystemClient::CreateFile(std::string abs_path, std::string root, int mod
 
         int ret = open(abs_path.c_str(), flags, mode);
         struct timespec ts;
-        GetModifyTime(abs_path, &ts);
+        getModifiedTime(abs_path, &ts);
         open_map[abs_path] = ts;
         printf("[CreateFile]: Open time set to %d %d\n", open_map[abs_path].tv_sec, open_map[abs_path].tv_nsec);
         printf("[CreateFile]: %s, %d, %d\n", abs_path.c_str(), flags, mode);
@@ -615,13 +615,13 @@ int FileSystemClient::DeleteFile(std::string abs_path, std::string root)
     RemoveRequest request;
     RemoveResponse reply;
     Status status;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     request.set_pathname(path);
 
-        ClientContext context;
-        reply.Clear();
-        status = stub_->Remove(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    status = stub_->Remove(&context, request, &reply);
 
     if (status.ok()) {
         printf("DeleteFile: RPC success\n");
@@ -635,7 +635,7 @@ int FileSystemClient::DeleteFile(std::string abs_path, std::string root)
 
         printf("DeleteFile: Completed\n");
 
-        if (file_exists(abs_path)) {
+        if (fileExists(abs_path)) {
             unlink(abs_path.c_str());
         }
         if (open_map.find(abs_path) != open_map.end()) {
@@ -663,65 +663,64 @@ int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::st
     Status status;
     timespec file_modified_time;
     timespec file_opened_time = open_map[abs_path];
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
-    GetModifyTime(abs_path, &file_modified_time);
+    getModifiedTime(abs_path, &file_modified_time);
     if (open_map.find(abs_path) == open_map.end() || file_modified_time.tv_sec > file_opened_time.tv_sec || (file_modified_time.tv_sec == file_opened_time.tv_sec && file_modified_time.tv_nsec > file_opened_time.tv_nsec)) {
-            ClientContext context;
-            reply.Clear();
+        ClientContext context;
+        reply.Clear();
 
-            struct stat st;
-            stat(abs_path.c_str(), &st);
-            int fileSize = st.st_size;
-            int totalChunks = 0;
-            totalChunks = fileSize / CHUNK_SIZE;
-            bool aligned = true;
-            int lastChunkSize = fileSize == 0 ? 0 : CHUNK_SIZE;
-            if (fileSize % CHUNK_SIZE) {
-                totalChunks++;
-                aligned = false;
-                lastChunkSize = fileSize % CHUNK_SIZE;
-            }
-            if (fileSize == 0) {
-                printf("CloseFileUsingStream: Nothing to send.\n");
-                return 0;
-            }
+        struct stat st;
+        stat(abs_path.c_str(), &st);
+        int fileSize = st.st_size;
+        int totalChunks = 0;
+        totalChunks = fileSize / CHUNK_SIZE;
+        bool aligned = true;
+        int lastChunkSize = fileSize == 0 ? 0 : CHUNK_SIZE;
+        if (fileSize % CHUNK_SIZE) {
+            totalChunks++;
+            aligned = false;
+            lastChunkSize = fileSize % CHUNK_SIZE;
+        }
+        if (fileSize == 0) {
+            printf("CloseFileUsingStream: Nothing to send.\n");
+            return 0;
+        }
 
-            request.set_pathname(path);
-            std::unique_ptr<ClientWriter<StoreRequest> > writer(
-                stub_->StoreUsingStream(&context, &reply));
+        request.set_pathname(path);
+        std::unique_ptr<ClientWriter<StoreRequest> > writer(
+            stub_->StoreUsingStream(&context, &reply));
 
-            std::ifstream fin(abs_path.c_str(), std::ios::binary);
-            fin.clear();
-            fin.seekg(0, ios::beg);
+        std::ifstream fin(abs_path.c_str(), std::ios::binary);
+        fin.clear();
+        fin.seekg(0, ios::beg);
 
-            unsigned long bytes = 0;
-            unsigned long bytes_read = 0;
-            for (size_t chunk = 0; chunk < totalChunks; chunk++) {
-                size_t currentChunkSize = (chunk == totalChunks - 1 && !aligned) ? lastChunkSize : CHUNK_SIZE;
+        unsigned long bytes = 0;
+        unsigned long bytes_read = 0;
+        for (size_t chunk = 0; chunk < totalChunks; chunk++) {
+            size_t currentChunkSize = (chunk == totalChunks - 1 && !aligned) ? lastChunkSize : CHUNK_SIZE;
 
-                char* buffer = new char[currentChunkSize];
-                bytes += currentChunkSize;
+            char* buffer = new char[currentChunkSize];
+            bytes += currentChunkSize;
 
-                if (fin.read(buffer, currentChunkSize)) {
-                    auto bcnt = fin.gcount();
-                    bytes_read += bcnt;
-                    request.set_pathname(path);
-                    request.set_file_contents(buffer, bcnt);
+            if (fin.read(buffer, currentChunkSize)) {
+                auto bcnt = fin.gcount();
+                bytes_read += bcnt;
+                request.set_pathname(path);
+                request.set_file_contents(buffer, bcnt);
 
-                    if (!writer->Write(request)) {
-                        printf("[CloseFileUsingStream]: Stream broke\n");
-                        break;
-                    }
-                }
-                else {
-                    printf("[CloseFileUsingStream]: Failed to write chunk [iter %ld, total %ld B]\n", chunk, bytes);
+                if (!writer->Write(request)) {
+                    printf("[CloseFileUsingStream]: Stream broke\n");
+                    break;
                 }
             }
-            fin.close();
-            writer->WritesDone();
-            status = writer->Finish();
-
+            else {
+                printf("[CloseFileUsingStream]: Failed to write chunk [iter %ld, total %ld B]\n", chunk, bytes);
+            }
+        }
+        fin.close();
+        writer->WritesDone();
+        status = writer->Finish();
 
         if (status.ok()) {
             printf("[CloseFileUsingStream]: RPC Success\n");
@@ -739,7 +738,7 @@ int FileSystemClient::CloseFileUsingStream(int fd, std::string abs_path, std::st
             t.tv_sec = timing.sec();
             t.tv_nsec = timing.nsec();
 
-            if (set_timings(abs_path, t) == -1) {
+            if (setTimings(abs_path, t) == -1) {
                 printf("[CloseFileUsingStream]: error (%d) setting file timings\n", errno);
             }
             else {
@@ -780,7 +779,7 @@ int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root
     FetchResponse reply;
     Status status;
     ClientContext context;
-    std::string path = get_relative_path(abs_path, root);
+    std::string path = getRelativePath(abs_path, root);
 
     auto test_auth_result = TestAuth(abs_path, root);
     if (!test_auth_result.status.ok() || test_auth_result.response.file_changed()) {
@@ -791,30 +790,27 @@ int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root
             printf("OpenFileUsingStream: TestAuth RPC failed\n");
         }
 
-        if (create_path(path, true, root) != 0) {
-            printf("[OpenFileUsingStream]: create_path() call failed.\n");
+        if (createPath(path, true, root) != 0) {
+            printf("[OpenFileUsingStream]: createPath() call failed.\n");
             return -1;
         }
 
-        
-            request.set_pathname(path);
+        request.set_pathname(path);
 
+        std::unique_ptr<ClientReader<FetchResponse> > reader(
+            stub_->FetchUsingStream(&context, request));
 
-            std::unique_ptr<ClientReader<FetchResponse> > reader(
-                stub_->FetchUsingStream(&context, request));
+        std::ofstream file;
+        file.open(abs_path, std::ios::binary);
+        file.clear();
+        file.seekp(0, ios::beg);
 
-            std::ofstream file;
-            file.open(abs_path, std::ios::binary);
-            file.clear();
-            file.seekp(0, ios::beg);
+        while (reader->Read(&reply)) {
+            file << reply.file_contents();
+        }
 
-            while (reader->Read(&reply)) {
-                file << reply.file_contents();
-            }
-
-            Status status = reader->Finish();
-            file.close();
-        
+        Status status = reader->Finish();
+        file.close();
 
         if (status.ok()) {
             printf("OpenFileUsingStream: RPC Success\n");
@@ -833,7 +829,7 @@ int FileSystemClient::OpenFileUsingStream(std::string abs_path, std::string root
 
             open_map[abs_path] = t;
 
-            if (set_timings(abs_path, t) == -1) {
+            if (setTimings(abs_path, t) == -1) {
                 printf("OpenFileUsingStream: error (%d) setting file timings\n", errno);
             }
             else {
@@ -869,15 +865,15 @@ int FileSystemClient::Rename(std::string abs_path, std::string new_name, std::st
     RenameResponse reply;
     Status status;
 
-    std::string old_path = get_relative_path(abs_path, root);
-    std::string new_path = get_relative_path(new_name, root);
+    std::string old_path = getRelativePath(abs_path, root);
+    std::string new_path = getRelativePath(new_name, root);
 
     request.set_pathname(old_path);
     request.set_componentname(new_path);
 
-        ClientContext context;
-        reply.Clear();
-        status = stub_->Rename(&context, request, &reply);
+    ClientContext context;
+    reply.Clear();
+    status = stub_->Rename(&context, request, &reply);
 
     if (status.ok()) {
         printf("Rename: RPC success\n");
