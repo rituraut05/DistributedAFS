@@ -754,12 +754,10 @@ extern "C" {
 					return -1;
 			}
 
+			GetModifyTime(abs_path, &open_map[abs_path]);
+			printf("Modified time set to %d %d",open_map[abs_path].tv_sec, open_map[abs_path].tv_nsec);
 			int ret = open(abs_path.c_str(), flags, mode);
 			debugprintf("CreateFile: %s, %d, %d\n", abs_path.c_str(), flags, mode);
-			struct timespec curr_time;
-			timespec_get(&curr_time, TIME_UTC);
-			curr_time.tv_sec--;
-			open_map[abs_path] = curr_time;
 			return ret;
 		} 
 		else 
@@ -1031,6 +1029,8 @@ extern "C" {
 				struct timespec t;
 				t.tv_sec = timing.sec();
 				t.tv_nsec = timing.nsec();
+
+				open_map[abs_path] = t;
 				
 				if(set_timings(abs_path,t) == -1) {
 					debugprintf("OpenFileUsingStream: error (%d) setting file timings\n",errno);
@@ -1055,10 +1055,6 @@ extern "C" {
 			debugprintf("OpenFileUsingStream: open() failed\n");
 			return -1;
 		}
-		struct timespec curr_time;
-		timespec_get(&curr_time, TIME_UTC);
-		curr_time.tv_sec--;
-		open_map[abs_path] = curr_time;
 		debugprintf("OpenFileUsingStream: Exiting function\n");
 		return file;
 	}
