@@ -336,7 +336,6 @@ int unreliable_open(const char *path, struct fuse_file_info *fi)
     }
     
     ret = openUsingStream_FileSystemClient(client, path, basedir, fi->flags);
-    // ret = open_FileSystemClient(client, path, basedir);
     // ret = open(path, fi->flags);
     if (ret == -1) {
         return -errno;
@@ -441,10 +440,8 @@ int unreliable_flush(const char *path, struct fuse_file_info *fi)
     }
 
     printf("flushing file: %s\n", path);
-    // ret = close(dup(fi->fh));
-    // ret = close_FileSystemClient(client, dup(fi->fh), path, basedir);
     ret = closeUsingStream_FileSystemClient(client, dup(fi->fh), path, basedir);
-
+    // ret = close(dup(fi->fh));
     if (ret == -1) {
         return -errno;
     }

@@ -11,7 +11,6 @@ service FileSystemService
     rpc Store (StoreRequest) returns (StoreResponse) {}
     rpc Remove (RemoveRequest) returns (RemoveResponse) {}
     rpc Create (CreateRequest) returns (CreateResponse) {}
-    // rpc Mknod (MknodRequest) returns (MknodResponse) {}
     rpc Rename (RenameRequest) returns (RenameResponse) {}
 
     // Metadata operations
@@ -22,7 +21,7 @@ service FileSystemService
     // Directory operations
     rpc MakeDir (MakeDirRequest) returns (MakeDirResponse) {}
     rpc RemoveDir (RemoveDirRequest) returns (RemoveDirResponse) {}
-    rpc ReadDir (ListDirRequest) returns (ListDirResponse) {}
+    rpc ReadDir (ReadDirRequest) returns (ReadDirResponse) {}
 
     rpc FetchUsingStream (FetchRequest) returns (stream FetchResponse) {}
     rpc StoreUsingStream (stream StoreRequest) returns (StoreResponse) {}
@@ -73,8 +72,7 @@ message AccessResponse
     int32 fs_errno = 1;
 }
 
-// Based on chrono::timespec
-// see https://en.cppreference.com/w/c/chrono/timespec
+
 message Timestamp
 {
     int64 sec = 1;
@@ -141,16 +139,6 @@ message RemoveResponse
     uint32 fs_errno = 1;
 }
 
-message MknodRequest
-{
-    string pathname = 1;
-    uint32 mode = 2;
-    uint32 dev = 3;
-}
-message MknodResponse
-{
-    uint32 fs_errno = 1;
-}
 
 message MakeDirRequest
 {
@@ -171,11 +159,11 @@ message RemoveDirResponse
     uint32 fs_errno = 1;
 }
 
-message ListDirRequest
+message ReadDirRequest
 {
     string pathname = 1;
 }
-message ListDirResponse
+message ReadDirResponse
 {
     uint32 fs_errno = 1;
     repeated DirectoryEntry entries = 2;

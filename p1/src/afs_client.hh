@@ -20,23 +20,23 @@ class FileSystemClient {
   public:
     FileSystemClient(std::shared_ptr<Channel> channel);
     int Ping(int * round_trip_time);
-    int GetFileStat(std::string path, struct stat *buf, std::string root);
-    int OpenFile(std::string path, std::string root);
-    int CloseFile(int fd, std::string path, std::string root);
-    int CreateFile(std::string abs_path, std::string root, mode_t mode, int flags);
-    int DeleteFile(std::string abs_path, std::string root);
-    int Access(std::string abs_path, int mode, std::string root);
-    int MakeDir(std::string abs_path, std::string root, mode_t mode);
-    int RemoveDir(std::string abs_path, std::string root);
-    int ReadDir(std::string abs_path, std::string root, void *buf, fuse_fill_dir_t filler);
-    int Rename(std:: string abs_path, std::string new_name, std::string root);
+    int GetFileStat(string path, struct stat *buf, string root);
+    int OpenFile(string path, string root);
+    int CloseFile(int fd, string path, string root);
+    int CreateFile(string abs_path, string root, int mode, int flags);
+    int DeleteFile(string abs_path, string root);
+    int Access(string abs_path, int mode, string root);
+    int MakeDir(string abs_path, string root, int mode);
+    int RemoveDir(string abs_path, string root);
+    int ReadDir(string abs_path, string root, void *buf, fuse_fill_dir_t filler);
+    int Rename(std:: string abs_path, string new_name, string root);
 
-    int CloseFileUsingStream(int fd, std::string abs_path, std::string root);
-    int OpenFileUsingStream(std::string abs_path, std::string root, int flags);
+    int CloseFileUsingStream(int fd, string abs_path, string root);
+    int OpenFileUsingStream(string abs_path, string root, int flags);
 
-    TestAuthReturn TestAuth(std::string path, std::string root);
+    TestAuthReturn TestAuth(string path, string root);
 
   private:
     std::unique_ptr<FileSystemService::Stub> stub_;
-    unordered_map<std::string, struct timespec> open_map;
+    unordered_map<string, struct timespec> open_map;
 };
