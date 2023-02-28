@@ -94,11 +94,6 @@ int getModifiedTime(std::string path, timespec* t)
     return 0;
 }
 
-int set_file_open_time(int fd, timespec t)
-{
-    struct timespec p[2] = { t, t };
-    return futimens(fd, p);
-}
 
 int setTimings(string path, timespec t)
 {
@@ -259,74 +254,6 @@ int FileSystemClient::GetFileStat(std::string abs_path, struct stat* buf, std::s
     else {
         return lstat(abs_path.c_str(), buf);
     }
-}
-
-int FileSystemClient::OpenFile(std::string abs_path, std::string root)
-{
-    int file;
-    FetchRequest req;
-    FetchResponse resp;
-    Status status;
-    std::string path = getRelativePath(abs_path, root);
-
-    auto test_auth_resp = TestAuth(abs_path, root);
-    if (!test_auth_resp.status.ok() || test_auth_resp.response.file_changed()) {
-
-        req.set_pathname(path);
-        ClientContext context;
-        resp.Clear();
-        status = stub_->Fetch(&context, req, &resp);
-
-        if (status.ok()) {
-            int server_errno = resp.fs_errno();
-            if (server_errno) {
-                printf("[OpenFile] Error %d on server\n", server_errno);
-                errno = server_errno;
-                return -1;
-            }
-
-            if (createPath(path, true, root) != 0) {
-                return -1;
-            }
-
-            file = open(abs_path.c_str(), O_RDWR | O_TRUNC | O_CREAT, 0666);
-            if (file == -1) {
-                return -1;
-            }
-
-            if (write(file, resp.file_contents().c_str(), resp.file_contents().length()) == -1) {
-                return -1;
-            }
-
-            if (fsync(file) == -1) {
-                return -1;
-            }
-
-            struct timespec t;
-            auto modified_time = resp.time_modified();
-            t.tv_sec = modified_time.sec();
-            t.tv_nsec = modified_time.nsec();
-            if (set_file_open_time(file, t) == -1) {
-                printf("[OpenFile]: Error (%d) setting file open and modified timings.\n", errno);
-            }
-
-            if (close(file) == -1) {
-                return -1;
-            }
-            printf("[OpenFile]: Successfully wrote %d bytes to cache.\n", (int)resp.file_contents().length());
-        }
-        else {
-            errno = transform_rpc_err(status.error_code());
-            return -1;
-        }
-    }
-
-    file = open(abs_path.c_str(), O_RDWR | O_CREAT, 0666);
-    if (file == -1) {
-        return -1;
-    }
-
-    return file;
 }
 
 TestAuthReturn FileSystemClient::TestAuth(std::string abs_path, std::string root)
@@ -515,57 +442,6 @@ int FileSystemClient::ReadDir(std::string abs_path, std::string root, void* buf,
             break;
     }
     return 0;
-}
-
-int FileSystemClient::CloseFile(int fd, std::string abs_path, std::string root)
-{
-    StoreRequest request;
-    StoreResponse reply;
-    Status status;
-    std::string path = getRelativePath(abs_path, root);
-
-    request.set_pathname(path);
-
-    string content = readFileIntoString(abs_path);
-    request.set_file_contents(content);
-
-    ClientContext context;
-    reply.Clear();
-    status = stub_->Store(&context, request, &reply);
-
-    if (status.ok()) {
-        printf("CloseFile: RPC Success\n");
-
-        uint server_errno = reply.fs_errno();
-        if (server_errno) {
-            printf("...but error %d on server\n", server_errno);
-            printf("CloseFile: Completed\n");
-            errno = server_errno;
-            return -1;
-        }
-        auto timing = reply.time_modify();
-
-        struct timespec t;
-        t.tv_sec = timing.sec();
-        t.tv_nsec = timing.nsec();
-
-        if (setTimings(abs_path, t) == -1) {
-            printf("CloseFile: error (%d) setting file timings\n", errno);
-        }
-        else {
-            printf("CloseFile: updated file timings\n");
-        }
-
-        printf("CloseFile: Completed\n");
-        return 0;
-    }
-    else {
-        std::cout << status.error_message() << "\n";
-        printf("CloseFile: RPC Failure %d.\n", status.error_code());
-        printf("CloseFile: Completed\n");
-        errno = transform_rpc_err(status.error_code());
-        return -1;
-    }
 }
 
 int FileSystemClient::CreateFile(std::string abs_path, std::string root, int mode, int flags)
