@@ -53,11 +53,8 @@ def gen_str_by_repeat(seed_str: str, l: int, tail: str = None) -> str:
 
 
 def test_ssh_access(host: str) -> bool:
-    print("hi")
     ssh_cmd = f'ssh {host} "ifconfig | grep inet"'
-    print(ssh_cmd)
     outs, _errs, ret = get_shell_cmd_output(None, ssh_cmd)
-    print(outs, _errs, ret)
     for lo in outs:
         print(lo)
     return ret == 0 and len(outs) > 0
@@ -68,6 +65,7 @@ def get_fs_signal_name(test_case):
     while True:
         yield f'/tmp/ClientA{test_case}_signal_{i}'
         i += 1
+
 
 
 def record_test_result(case_no: int, client_id: str, msg: str):
@@ -114,11 +112,10 @@ def start_another_client(host: str, test_case: int, client_id: str,
             so this client can know it.
     """
     send_signal(host, signal_fname)
-    signal_exists = (not poll_signal_remove(host, signal_fname))
-    assert signal_exists
-    script_name = f'~/backup2/cs739/p1/scripts/test{test_case}_client{client_id.upper()}.py'
-    ssh_cmd = f'source ~/.bashrc && python {script_name}'
-    print(ssh_cmd)
+    signal_exists = (not poll_signal_remove(host, signal_fname)) #checks if the signal file is deleted or not
+    assert signal_exists #if file is not deleted that means the signal is alive on the remote.
+    script_name = f'~/cs739/p1/scripts/test{test_case}_client{client_id.upper()}.py'
+    ssh_cmd = f'source ~/739p1.env && python {script_name}'
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     username = getpass.getuser()
@@ -127,22 +124,24 @@ def start_another_client(host: str, test_case: int, client_id: str,
     print(home_dir)
     assert username is not None
     sshkey_fname = f'{home_dir}/.ssh/id_ed25519'
-    print(f'Connect {username}@{host}')
-    client.connect(hostname=host, username=username, key_filename=sshkey_fname)
-    stdin, stdout, stderr = client.exec_command(ssh_cmd)
+    print(f'Connect {username}@{host}') 
+    client.connect(hostname=host, username=username, key_filename=sshkey_fname) #connects to the remote.
+    stdin, stdout, stderr = client.exec_command(ssh_cmd) #executes the clientB on remote.
     # useful when connection init has issues
     print(stdout.readlines())
-    # print(stderr.readlines())
-    # client.close()
+    print(stderr.readlines())
+    client.close()
     print(ssh_cmd)
 
 
+#gives control to B for their corresponding wait.
 def send_signal(host: str, signal_fname: str):
     """
     Send signal to a remote client so it can keep executing.
     """
     ssh_cmd = f'ssh {host} touch {signal_fname}'
-    outs, _errs, ret = get_shell_cmd_output(None, ssh_cmd)
+    outs, _errs, ret = get_shell_cmd_output(None, ssh_cmd) # creates the signal file on remote B
+    #creating a file on B gives control to B when there is a corresponding wait.
     for lo in outs:
         print(lo)
     assert ret == 0
@@ -156,12 +155,13 @@ def kill_client(host: str):
     
     ssh_cmd = f'ssh {host} pkill afs_client'
     if host == "localhost":
-        ssh_cmd = "kill -9 $(ps -ef | grep afs_client | grep -v grep | awk '{print $2}')"
+        ssh_cmd = "pkill afs_client"
     print(ssh_cmd)
     outs, _errs, ret = get_shell_cmd_output(None, ssh_cmd)
     for lo in outs:
         print(lo)
     assert ret == 0
+
 
 def start_client(host: str):
     """
@@ -169,15 +169,12 @@ def start_client(host: str):
     """
     ssh_cmd = f'ssh {host} ~/backup2/cs739/p1/scripts/start_client.sh'
     if host == "localhost":
-        ssh_cmd = "cd ~/backup2/cs739/p1/src/build && ./afs_client -f /users/snehalw/test/client_test -basedir=/users/snehalw/test/ &"
+        ssh_cmd = "cd ~/cs739/p1/scripts/start_client.sh"
     print(ssh_cmd)
     outs, _errs, ret = get_shell_cmd_output(None, ssh_cmd)
     for lo in outs:
         print(lo)
     assert ret == 0
-
-# ssh c220g5-110922.wisc.cloudlab.us "kill -9 \$(ps -aux | grep afs_client | grep grep | awk '{print \$2}')"
-# ssh c220g5-110922.wisc.cloudlab.us kill -9 $(ps -ef | grep afs_client | grep -v grep | awk '{print $2}')
 
 def poll_signal_remove(host: str, signal_fname: str) -> bool:
     """
@@ -208,7 +205,8 @@ def mkdir(dir_name: str):
 
 def delete_file(fname: str):
     ret = os.unlink(fname)
-    assert ret == 0
+    print(f"Delete return: {ret}")
+    assert ret == None
 
 
 def stat_file(fname: str) -> os.stat_result:
@@ -231,14 +229,11 @@ def open_file(fname: str) -> int:
         return -100
 
 def close_file(fd: int):
-    print("hey closing")
-    os.close(fd)
-    # try:
-    #     os.close(fd)
-    # except OSError as e:
-    #     print(e)
-    #     return -100
-
+    try:
+        os.close(fd)
+    except OSError as e:
+        print(e)
+        return -100
 
 
 def write_file(fd: int, w_str: str, start_off: int = -1) -> int:

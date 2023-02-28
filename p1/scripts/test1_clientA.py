@@ -15,7 +15,7 @@ ENV_VARS = {var_name: os.environ.get(var_name) for var_name in cs739_env_vars}
 for env_var in ENV_VARS.items():
     print(env_var)
     assert env_var is not None
-TEST_DATA_DIR = ENV_VARS['CS739_MOUNT_POINT2'] + '/test_consistency'
+TEST_DATA_DIR = ENV_VARS['CS739_MOUNT_POINT'] + '/test_consistency'
 FNAME = f'{TEST_DATA_DIR}/case1'
 print(TEST_DATA_DIR)
 TEST_CASE_NO = 1
@@ -39,16 +39,12 @@ def run_test():
     fd = fs_util.open_file(FNAME)
     fs_util.write_file(fd, init_str)
     fs_util.close_file(fd)
-
-    print("CLOSED FILE!!!!")
-    # time.sleep(10)
-    
     # open again
     fd = fs_util.open_file(FNAME)
 
     # time for client_b to work, host_b should read the all-zero file
     cur_signal_name = next(signal_name_gen)
-    fs_util.start_another_client(host_b, 6, 'B', cur_signal_name)
+    fs_util.start_another_client(host_b, 1, 'B', cur_signal_name)
 
     # wait until client_b finish
     print(f"curr_signal_name: {cur_signal_name}")
